@@ -1,0 +1,15 @@
+# Node.js
+node_modules/
+npm-debug.log*
+
+# Secrets & Environment Variables
+.env
+
+# Java
+*.class
+*.jar
+*.war
+
+# Operating System files
+Thumbs.db
+.DS_Store
