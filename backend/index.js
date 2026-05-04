@@ -1,83 +1,87 @@
 // 1. Core Module Imports
-const express = require('express');
-const { Pool } = require('pg');
-require('dotenv').config();
+const { setDefaultResultOrder } = require('dns')
+setDefaultResultOrder('ipv4first')
 
-const app = express();
-app.use(express.json()); // Allows the API to read JSON bodies
+const express = require('express')
+const postgres = require('postgres')
+require('dotenv').config()
 
-// 2. Database Configuration
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false, // Essential for Supabase
-  },
-  // Adding these for the Pooler (Port 6543)
-  max: 10,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000, 
-});
+const app = express()
+app.use(express.json())
+
+// 2. Database Configuration (postgres.js - confirmed working)
+const sql = postgres(process.env.DATABASE_URL, {
+  ssl: 'require',
+  connect_timeout: 30,
+  idle_timeout: 20,
+  max: 10
+})
 
 // 3. Immediate Connection Test
-// This runs as soon as you type 'node index.js'
-console.log('--- Attempting Supabase Connection Test ---');
-pool.query('SELECT NOW()')
+console.log('--- Attempting Supabase Connection Test ---')
+sql`SELECT NOW()`
   .then(res => {
-    console.log('✅ SUCCESS: Connected to Supabase!');
-    console.log('Current Database Time:', res.rows[0].now);
+    console.log('✅ SUCCESS: Connected to Supabase!')
+    console.log('Current Database Time:', res[0].now)
   })
   .catch(err => {
-    console.error('❌ FAILED to connect to Supabase!');
-    console.error('Error details:', err.message);
-    console.error('Action: Check your .env file for correct DATABASE_URL and password.');
-  });
+    console.error('❌ FAILED to connect to Supabase!')
+    console.error('Error details:', err.message)
+  })
 
-// 4. Health Check Endpoint (REQ-Health)[cite: 1]
+// 4. Health Check Endpoint
 app.get('/api/v1/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date() });
-});
+  res.json({ status: 'ok', timestamp: new Date() })
+})
 
-// 5. Nearby Outlets Endpoint (REQ-001, REQ-002, REQ-107)[cite: 1]
+// 5. Nearby Outlets Endpoint (REQ-001, REQ-002, REQ-107)
 app.get('/api/v1/outlets/nearby', async (req, res) => {
-  console.log(`--- Nearby Request Received: ${new Date().toISOString()} ---`);
-  
-  const { lat, lng, radius = 2000 } = req.query;
+  console.log(`--- Nearby Request Received: ${new Date().toISOString()} ---`)
 
-  // Basic validation[cite: 1]
+  const { lat, lng, radius = 2000 } = req.query
+
   if (!lat || !lng) {
-    return res.status(400).json({ error: 'Latitude and longitude are required' });
+    return res.status(400).json({ error: 'Latitude and longitude are required' })
+  }
+
+  const latNum = parseFloat(lat)
+  const lngNum = parseFloat(lng)
+  const radiusNum = parseFloat(radius)
+
+  if (isNaN(latNum) || isNaN(lngNum) || isNaN(radiusNum)) {
+    return res.status(400).json({ error: 'lat, lng, and radius must be valid numbers' })
   }
 
   try {
-    // Spatial query using PostGIS geography types for accuracy in San Juan City
-    const nearbyQuery = `
-      SELECT id, outlet_name, outlet_formaladdress, 
-             ST_Distance(location, ST_Point($1, $2)::geography) AS dist_m
-      FROM outlets_duplicate
-      WHERE ST_DWithin(location, ST_Point($1, $2)::geography, $3)
-        AND outlet_status = 'active'
+    console.log('Executing nearby outlets query...')
+
+    // postgres.js uses template literals - longitude first in ST_Point
+    const results = await sql`
+      SELECT 
+        id,
+        outlet_name,
+        outlet_formaladdress,
+        ST_Distance(location, ST_Point(${lngNum}, ${latNum})::geography) AS dist_m
+      FROM outlets_main
+      WHERE ST_DWithin(location, ST_Point(${lngNum}, ${latNum})::geography, ${radiusNum})
+        AND outlet_status = 'ACTIVE'
         AND location_pin_quality IN ('precise', 'area')
         AND location IS NOT NULL
-      ORDER BY dist_m ASC;
-    `;
+      ORDER BY dist_m ASC
+    `
 
-    const values = [lng, lat, radius]; // Coordinates order: Longitude, Latitude[cite: 1]
-    
-    console.log('Executing database query...');
-    const result = await pool.query(nearbyQuery, values);
-    
-    console.log(`Query successful. Found ${result.rows.length} active outlets.`);
-    res.json(result.rows);
+    console.log(`Query successful. Found ${results.length} active outlets.`)
+    res.json(results)
 
   } catch (err) {
-    console.error('Database Query Error:', err.message);
-    res.status(500).json({ error: 'Internal server error during outlet search' });
+    console.error('Database Query Error:', err.message)
+    res.status(500).json({ error: 'Internal server error during outlet search' })
   }
-});
+})
 
-// 6. Start the Server[cite: 1]
-const PORT = process.env.PORT || 3000;
+// 6. Start the Server
+const PORT = process.env.PORT || 3000
 app.listen(PORT, () => {
-  console.log(`🚀 ZeroThree Backend is live!`);
-  console.log(`Listening at: http://localhost:${PORT}`);
-});
+  console.log(`🚀 ZeroThree Backend is live!`)
+  console.log(`Listening at: http://localhost:${PORT}`)
+})
