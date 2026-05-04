@@ -1,41 +1,8 @@
-// 1. Core Module Imports
-const { setDefaultResultOrder } = require('dns')
-setDefaultResultOrder('ipv4first')
-
 const express = require('express')
-const postgres = require('postgres')
-require('dotenv').config()
+const router = express.Router()
+const sql = require('../db')
 
-const app = express()
-app.use(express.json())
-
-// 2. Database Configuration (postgres.js - confirmed working)
-const sql = postgres(process.env.DATABASE_URL, {
-  ssl: 'require',
-  connect_timeout: 30,
-  idle_timeout: 20,
-  max: 10
-})
-
-// 3. Immediate Connection Test
-console.log('--- Attempting Supabase Connection Test ---')
-sql`SELECT NOW()`
-  .then(res => {
-    console.log('✅ SUCCESS: Connected to Supabase!')
-    console.log('Current Database Time:', res[0].now)
-  })
-  .catch(err => {
-    console.error('❌ FAILED to connect to Supabase!')
-    console.error('Error details:', err.message)
-  })
-
-// 4. Health Check Endpoint
-app.get('/api/v1/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date() })
-})
-
-// 5. Nearby Outlets Endpoint (REQ-001, REQ-002, REQ-107)
-app.get('/api/v1/outlets/nearby', async (req, res) => {
+router.get('/nearby', async (req, res) => {
   console.log(`--- Nearby Request Received: ${new Date().toISOString()} ---`)
 
   const { lat, lng, radius = 2000 } = req.query
@@ -79,7 +46,7 @@ app.get('/api/v1/outlets/nearby', async (req, res) => {
   }
 })
 
-app.get('/api/v1/outlets/:id/last-visit', async (req, res) => {
+router.get('/:id/last-visit', async (req, res) => {
   console.log(`--- Last Visit Request Received: ${new Date().toISOString()} ---`)
 
   const {id} = req.params
@@ -134,9 +101,4 @@ app.get('/api/v1/outlets/:id/last-visit', async (req, res) => {
   }
 })
 
-// 6. Start the Server
-const PORT = process.env.PORT || 3000
-app.listen(PORT, () => {
-  console.log(`🚀 ZeroThree Backend is live!`)
-  console.log(`Listening at: http://localhost:${PORT}`)
-})
+module.exports=router
