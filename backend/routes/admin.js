@@ -28,4 +28,24 @@ admin.get('/outlets', async (req, res) => {
   }
 })
 
+admin.get('/outlets/unvisited', async (req, res) => {
+  try {
+    const results = await sql`
+        SELECT o.id, o.outlet_name, o.outlet_formaladdress, o.outlet_status
+        FROM outlets_main o
+        WHERE o.outlet_status = 'ACTIVE'
+        AND o.id NOT IN (
+            SELECT DISTINCT outlet_id 
+            FROM visits 
+            WHERE arrived_at > NOW() - INTERVAL '7 days'
+            )
+        ORDER BY o.outlet_status ASC, o.id ASC;
+      `
+    res.json(results)
+  } catch (err) {
+    console.error('Error:', err.message)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 module.exports=admin
