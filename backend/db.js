@@ -11,4 +11,12 @@ const sql = postgres(process.env.DATABASE_URL, {
   max: 10
 })
 
+sql`SELECT NOW()`
+  .then(res => {
+    console.log('✅ Supabase connected:', res[0].now)
+  })
+  .catch(err => {
+    console.error('❌ Supabase connection failed:', err.message)
+  })
+
 module.exports = sql
