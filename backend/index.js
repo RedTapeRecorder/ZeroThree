@@ -10,6 +10,9 @@ app.use('/api/v1/outlets', outletsRouter)
 const adminRouter = require('./routes/admin')
 app.use('/api/v1/admin', adminRouter)
 
+const visitsRouter = require('./routes/visits')
+app.use('/api/v1/visits', visitsRouter)
+
 app.get('/api/v1/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date() })
 })
