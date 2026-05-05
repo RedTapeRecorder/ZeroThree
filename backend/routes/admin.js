@@ -48,4 +48,29 @@ admin.get('/outlets/unvisited', async (req, res) => {
   }
 })
 
+admin.post('/outlets', async (req, res) => {
+  // 1. Extract from request body
+  const { outlet_name, outlet_status, outlet_formaladdress, location_pin_quality, lat, lng } = req.body
+
+  // 2. Validate required fields
+  if (!outlet_name || !outlet_status || !outlet_formaladdress || !location_pin_quality || !lat || !lng) {
+    return res.status(400).json({ error: 'Required fields are missing' })
+  }
+
+  // 3. Insert into database
+  try {
+    const result = await sql`
+      INSERT INTO outlets_main (outlet_name, outlet_status, outlet_formaladdress, location_pin_quality, location)
+      VALUES (${outlet_name}, ${outlet_status}, ${outlet_formaladdress}, ${location_pin_quality}, ST_Point(${lng}, ${lat})::geography)
+      RETURNING *
+    `
+
+    // 4. Return 201 with the created record
+    res.status(201).json(result[0])
+
+  } catch (err) {
+    console.error('Error:', err.message)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
 module.exports=admin
