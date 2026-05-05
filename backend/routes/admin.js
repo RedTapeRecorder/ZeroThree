@@ -50,18 +50,23 @@ admin.get('/outlets/unvisited', async (req, res) => {
 
 admin.post('/outlets', async (req, res) => {
   // 1. Extract from request body
-  const { outlet_name, outlet_status, outlet_formaladdress, location_pin_quality, lat, lng } = req.body
+  const { outlet_name, outlet_status, outlet_formaladdress, location_pin_quality, location_verification_level, owner_name, lat, lng, 
+          outlet_city, outlet_district, outlet_barangay, owner_contact, outlet_area, outlet_concerningbranch, show_last_visitor, show_last_visit_time
+  } = req.body
 
   // 2. Validate required fields
-  if (!outlet_name || !outlet_status || !outlet_formaladdress || !location_pin_quality || !lat || !lng) {
+  if (!outlet_name || !outlet_status || !outlet_formaladdress || !location_pin_quality || !location_verification_level ||!owner_name|| !lat || !lng) {
     return res.status(400).json({ error: 'Required fields are missing' })
   }
 
   // 3. Insert into database
   try {
     const result = await sql`
-      INSERT INTO outlets_main (outlet_name, outlet_status, outlet_formaladdress, location_pin_quality, location)
-      VALUES (${outlet_name}, ${outlet_status}, ${outlet_formaladdress}, ${location_pin_quality}, ST_Point(${lng}, ${lat})::geography)
+      INSERT INTO outlets_main (outlet_name, outlet_status, outlet_formaladdress, location_pin_quality, location_verification_level, owner_name, location,
+      outlet_city, outlet_district, outlet_barangay, owner_contact, outlet_area, outlet_concerningbranch, show_last_visitor, show_last_visit_time)
+      VALUES (${outlet_name}, ${outlet_status}, ${outlet_formaladdress}, ${location_pin_quality}, ${location_verification_level}, ${owner_name}, ST_Point(${lng}, ${lat})::geography,
+      ${outlet_city || null}, ${outlet_district || null}, ${outlet_barangay || null}, ${owner_contact || null}, ${outlet_area || null}, ${outlet_concerningbranch || null}, ${show_last_visitor ?? null}, ${show_last_visit_time ?? null}
+      )
       RETURNING *
     `
 
@@ -73,4 +78,5 @@ admin.post('/outlets', async (req, res) => {
     res.status(500).json({ error: 'Internal server error' })
   }
 })
+
 module.exports=admin
