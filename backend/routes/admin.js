@@ -242,7 +242,7 @@ admin.get('/outlets/:id/visits', requireManager, async (req, res) => {
   try {
     // Verify outlet exists
     const outletCheck = await pool.query(
-      `SELECT id, outlet_name FROM outlets WHERE id = $1`,
+      `SELECT id, outlet_name FROM outlets_main WHERE id = $1`,
       [outletId]
     );
 
@@ -257,11 +257,10 @@ admin.get('/outlets/:id/visits', requireManager, async (req, res) => {
          v.arrived_at,
          v.departed_at,
          v.duration_minutes,
-         v.units_refilled,
-         v.units_sold_new,
-         v.payment_collected,
+         v.units_refill,
+         v.units_tripler,
+         v.payment,
          v.gps_accuracy_meters,
-         v.notes,
          v.created_at,
          r.id        AS rider_id,
          r.full_name AS rider_name
@@ -343,17 +342,16 @@ admin.get('/riders/:id/visits', requireManager, async (req, res) => {
          v.arrived_at,
          v.departed_at,
          v.duration_minutes,
-         v.units_refilled,
-         v.units_sold_new,
-         v.payment_collected,
+         v.units_refill,
+         v.units_tripler,
+         v.payment,
          v.gps_accuracy_meters,
-         v.notes,
          v.created_at,
          o.id           AS outlet_id,
          o.outlet_name,
          o.outlet_barangay
        FROM visits v
-       JOIN outlets o ON o.id = v.outlet_id
+       JOIN outlets_main o ON o.id = v.outlet_id
        WHERE ${whereClause}
        ORDER BY COALESCE(v.arrived_at, v.created_at) DESC
        LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
