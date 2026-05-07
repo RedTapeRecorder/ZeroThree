@@ -1,7 +1,7 @@
 // routes/photos.js
 const express = require('express');
 const photos = express.Router();
-const { pool } = require('../db');
+const { pool , sql} = require('../db');
 const { requireRider, requireManager } = require('../middleware/authenticate');
 const cloudinary = require('cloudinary').v2;
 
@@ -139,7 +139,7 @@ photos.post('/admin/outlets/:id/photo', requireManager, async (req, res) => {
 
   try {
     const outletCheck = await pool.query(
-      `SELECT id FROM outlets WHERE id = $1`,
+      `SELECT id FROM outlets_main WHERE id = $1`,
       [outletId]
     );
 
@@ -306,7 +306,6 @@ photos.patch('/admin/photos/:id/review', requireManager, async (req, res) => {
     }
 
     if (decision === 'rejected') {
-      // Simple update — photo stays in DB per REQ-057, just marked rejected
       await pool.query(
         `UPDATE outlet_photos
          SET status           = 'rejected',
@@ -320,22 +319,18 @@ photos.patch('/admin/photos/:id/review', requireManager, async (req, res) => {
       return res.status(200).json({ result: 'rejected' });
     }
 
-    // decision === 'approved'
-    // Promote atomically: demote current → approve + set is_current on new photo
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-
-      // Demote whichever photo is currently live for this outlet
-      await client.query(
+    // decision === 'approved' — promote atomically
+    await sql.begin(async txSql => {
+      // Demote current photo
+      await txSql.unsafe(
         `UPDATE outlet_photos
          SET is_current = FALSE
          WHERE outlet_id = $1 AND is_current = TRUE`,
         [photo.outlet_id]
       );
 
-      // Approve and promote the submitted photo
-      await client.query(
+      // Approve and promote submitted photo
+      await txSql.unsafe(
         `UPDATE outlet_photos
          SET status      = 'approved',
              is_current  = TRUE,
@@ -344,19 +339,12 @@ photos.patch('/admin/photos/:id/review', requireManager, async (req, res) => {
          WHERE id = $2`,
         [req.manager.name, photoId]
       );
+    });
 
-      await client.query('COMMIT');
-
-      return res.status(200).json({ result: 'approved' });
-    } catch (txErr) {
-      await client.query('ROLLBACK');
-      throw txErr;
-    } finally {
-      client.release();
-    }
+    return res.status(200).json({ result: 'approved' });
   } catch (err) {
     console.error('[PATCH /admin/photos/:id/review]', err.message);
-    return res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: err.message });
   }
 });
 
