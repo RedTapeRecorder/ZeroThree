@@ -19,4 +19,12 @@ sql`SELECT NOW()`
     console.error('❌ Supabase connection failed:', err.message)
   })
 
-module.exports = sql
+// Wrap sql into a pool-compatible object so routes written for pg work unchanged. Used for auth.js
+const pool = {
+  query: (text, params = []) => {
+    // postgres.js uses $1 $2 placeholders natively — pass params as the second argument
+    return sql.unsafe(text, params).then(rows => ({ rows }));
+  },
+};
+
+module.exports = { pool, sql }
