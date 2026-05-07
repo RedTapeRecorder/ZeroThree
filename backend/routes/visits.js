@@ -1,6 +1,6 @@
 const express = require('express')
 const visits = express.Router()
-const sql = require('../db')
+const { sql } = require('../db');    // ← correct now
 
 visits.post('/', async(req,res)=>{
     const{rider_id,outlet_id,outcome,arrived_at,departed_at,duration_minutes,units_refill,units_stove,

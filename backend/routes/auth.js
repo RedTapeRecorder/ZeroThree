@@ -4,6 +4,7 @@ const auth = express.Router();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const { sql } = require('../db');    // ← correct now
 const { pool } = require('../db'); // pg Pool instance
 const { requireRider, requireManager } = require('../middleware/authenticate');
 

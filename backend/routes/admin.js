@@ -1,6 +1,6 @@
 const express = require('express')
 const admin = express.Router()
-const sql = require('../db')
+const { sql } = require('../db');    // ← correct now
 
 admin.get('/outlets', async (req, res) => {
   const { status, pin_quality, verification_level } = req.query

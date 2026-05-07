@@ -76,7 +76,7 @@ photos.post('/outlets/:id/photo', requireRider, async (req, res) => {
   try {
     // Verify the outlet exists and is active before accepting the photo
     const outletCheck = await pool.query(
-      `SELECT id FROM outlets WHERE id = $1 AND outlet_status = 'active'`,
+      `SELECT id FROM outlets_main WHERE id = $1 AND outlet_status = 'ACTIVE'`,
       [outletId]
     );
 
@@ -239,7 +239,7 @@ photos.get('/admin/photos/pending', requireManager, async (req, res) => {
            LIMIT 1
          )                           AS current_photo_url
        FROM outlet_photos p
-       JOIN outlets o  ON o.id = p.outlet_id
+       JOIN outlets_main o  ON o.id = p.outlet_id
        LEFT JOIN riders r ON r.id = p.submitted_by_rider_id
        WHERE p.status = 'pending'
        ORDER BY p.submitted_at ASC`   // oldest first — clear the backlog in order

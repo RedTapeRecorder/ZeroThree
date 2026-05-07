@@ -1,6 +1,6 @@
 const express = require('express')
 const router = express.Router()
-const sql = require('../db')
+const { sql } = require('../db');    // ← correct now
 
 router.get('/nearby', async (req, res) => {
   console.log(`--- Nearby Request Received: ${new Date().toISOString()} ---`)
