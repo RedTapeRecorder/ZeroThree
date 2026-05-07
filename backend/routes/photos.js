@@ -147,67 +147,43 @@ photos.post('/admin/outlets/:id/photo', requireManager, async (req, res) => {
       return res.status(404).json({ error: 'Outlet not found' });
     }
 
-    // Upload to Cloudinary with same compression as rider uploads
     const uploadResult = await cloudinary.uploader.upload(photo_base64, {
       folder: `zerothree/outlets/${outletId}`,
-      eager: [
-        {
-          quality: 'auto:good',
-          fetch_format: 'jpg',
-          width: 1024,
-          crop: 'limit',
-        },
-      ],
+      eager: [{ quality: 'auto:good', fetch_format: 'jpg', width: 1024, crop: 'limit' }],
       eager_async: false,
     });
 
-    const transformedUrl = uploadResult.eager?.[0]?.secure_url
-      ?? uploadResult.secure_url;
+    const transformedUrl = uploadResult.eager?.[0]?.secure_url ?? uploadResult.secure_url;
 
-    // Promote the new photo atomically:
-    // 1. Demote any existing current photo
-    // 2. Insert new photo as approved + current
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-
-      await client.query(
-        `UPDATE outlet_photos
-         SET is_current = FALSE
-         WHERE outlet_id = $1 AND is_current = TRUE`,
+    let newPhoto;
+    await sql.begin(async txSql => {
+      await txSql.unsafe(
+        `UPDATE outlet_photos SET is_current = FALSE WHERE outlet_id = $1 AND is_current = TRUE`,
         [outletId]
       );
 
-      const insertResult = await client.query(
+      const insertResult = await txSql.unsafe(
         `INSERT INTO outlet_photos
-           (outlet_id, submitted_by_rider_id, cloudinary_url, cloudinary_id,
-            submission_source, status, is_current,
-            reviewed_at, reviewed_by)
-         VALUES ($1, NULL, $2, $3, 'manager', 'approved', TRUE, NOW(), $4)
+           (outlet_id, submitted_by, cloudinary_url, cloudinary_id,
+            submission_source, status, is_current, reviewed_at, reviewed_by)
+         VALUES ($1, $2, $3, $4, 'manager', 'approved', TRUE, NOW(), $5)
          RETURNING id, cloudinary_url, submitted_at`,
-        [outletId, transformedUrl, uploadResult.public_id, req.manager.name]
+        [outletId, req.manager.name, transformedUrl, uploadResult.public_id, req.manager.name]
       );
 
-      await client.query('COMMIT');
+      newPhoto = insertResult[0];
+    });
 
-      const photo = insertResult.rows[0];
-
-      return res.status(201).json({
-        photo: {
-          id: photo.id,
-          url: photo.cloudinary_url,
-          submitted_at: photo.submitted_at,
-        },
-      });
-    } catch (txErr) {
-      await client.query('ROLLBACK');
-      throw txErr;
-    } finally {
-      client.release();
-    }
+    return res.status(201).json({
+      photo: {
+        id: newPhoto.id,
+        url: newPhoto.cloudinary_url,
+        submitted_at: newPhoto.submitted_at,
+      },
+    });
   } catch (err) {
     console.error('[POST /admin/outlets/:id/photo]', err.message);
-    return res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: err.message });
   }
 });
 
