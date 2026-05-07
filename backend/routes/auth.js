@@ -5,6 +5,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { pool } = require('../db'); // pg Pool instance
+const { requireRider, requireManager } = require('../middleware/authenticate');
 
 // ─────────────────────────────────────────────
 // POST /api/v1/auth/manager/login
@@ -191,7 +192,7 @@ auth.post('/rider/verify', async (req, res) => {
 // PATCH /admin/riders/:id/reset-setup
 // Manager regenerates a setup code for a rider who has lost their token
 
-router.patch('/admin/riders/:id/reset-setup', requireManager, async (req, res) => {
+auth.patch('/admin/riders/:id/reset-setup', requireManager, async (req, res) => {
   const riderId = parseInt(req.params.id, 10);
 
   // Generate a new readable setup code
