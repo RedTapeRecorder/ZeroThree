@@ -417,4 +417,35 @@ function formatVisit(row) {
   };
 }
 
+//Riders Manager View API.
+
+admin.post('/riders', requireManager, async (req, res) => {
+  const { 
+    full_name, phone_number, photo_url, 
+    emergency_contact_name, emergency_contact_number, assigned_areas 
+  } = req.body;
+
+  // Generate a random 6-character alphanumeric setup code
+  const setupCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO riders (
+        full_name, phone_number, photo_url, 
+        emergency_contact_name, emergency_contact_number, 
+        assigned_areas, setup_code, status
+      ) 
+      VALUES ($1, $2, $3, $4, $5, $6, $7, 'active') 
+      RETURNING id, full_name, setup_code`,
+      [full_name, phone_number, photo_url, emergency_contact_name, emergency_contact_number, assigned_areas, setupCode]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('[POST /admin/riders]', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
 module.exports=admin
