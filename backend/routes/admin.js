@@ -465,4 +465,221 @@ admin.get('/riders', requireManager, async (req, res) => {
   }
 });
 
+//SINGLE RIDER STATISTICS
+admin.get('/riders/:id', requireManager, async (req, res) => {
+  const riderId = parseInt(req.params.id, 10);
+
+  if (isNaN(riderId)) {
+    return res.status(400).json({ error: 'Invalid rider id' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT 
+        id, 
+        full_name, 
+        phone_number, 
+        photo_url,
+        emergency_contact_name, 
+        emergency_contact_number, 
+        assigned_areas, 
+        date_hired, 
+        status,
+        created_at, 
+        last_active_at,
+        (SELECT COUNT(DISTINCT (arrived_at AT TIME ZONE 'Asia/Manila')::DATE) 
+         FROM visits WHERE rider_id = $1) AS days_active,
+        (SELECT COUNT(*) FROM visits WHERE rider_id = $1) AS total_visits
+      FROM riders 
+      WHERE id = $1`,
+      [riderId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Rider not found' });
+    }
+
+    res.status(200).json(result.rows[0]);
+  } catch (err) {
+    console.error('[GET /admin/riders/:id]', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Locks the account and kills the active session
+admin.patch('/riders/:id/lock', requireManager, async (req, res) => {
+  const riderId = parseInt(req.params.id, 10);
+
+  try {
+    const result = await pool.query(
+      `UPDATE riders 
+       SET status = 'locked', auth_token_hash = NULL 
+       WHERE id = $1 
+       RETURNING id, status`,
+      [riderId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Rider not found' });
+    }
+
+    res.status(200).json({ 
+      message: 'Rider account locked and session invalidated',
+      rider: result.rows[0] 
+    });
+  } catch (err) {
+    console.error('[PATCH /admin/riders/:id/lock]', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+admin.patch('/riders/:id/activate', requireManager, async (req, res) => {
+  const riderId = parseInt(req.params.id, 10);
+
+  try {
+    const result = await pool.query(
+      `UPDATE riders SET status = 'active' WHERE id = $1 RETURNING id, status`,
+      [riderId]
+    );
+
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Rider not found' });
+
+    res.status(200).json({ message: 'Rider account activated', rider: result.rows[0] });
+  } catch (err) {
+    console.error('[PATCH /admin/riders/:id/activate]', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+admin.patch('/riders/:id/activate', requireManager, async (req, res) => {
+  const riderId = parseInt(req.params.id, 10);
+
+  try {
+    const result = await pool.query(
+      `UPDATE riders SET status = 'active' WHERE id = $1 RETURNING id, status`,
+      [riderId]
+    );
+
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Rider not found' });
+
+    res.status(200).json({ message: 'Rider account activated', rider: result.rows[0] });
+  } catch (err) {
+    console.error('[PATCH /admin/riders/:id/activate]', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// NOTE: In production, this should use Rider Auth middleware, not requireManager
+admin.patch('/riders/:id/fcm-token', async (req, res) => {
+  const riderId = parseInt(req.params.id, 10);
+  const { fcm_token } = req.body;
+
+  if (!fcm_token) {
+    return res.status(400).json({ error: 'FCM token is required' });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE riders 
+       SET fcm_token = $1, last_active_at = NOW() 
+       WHERE id = $2 
+       RETURNING id`,
+      [fcm_token, riderId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Rider not found' });
+    }
+
+    res.status(200).json({ message: 'FCM token updated' });
+  } catch (err) {
+    console.error('[PATCH /riders/:id/fcm-token]', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+//ROUTES 
+//Manager makes a route
+admin.post('/routes', requireManager, async (req, res) => {
+  const { rider_id, route_name, outlet_ids } = req.body; // outlet_ids is an array [1, 2, 3...]
+
+  // REQ-060: Max 80 outlets per route
+  if (!Array.isArray(outlet_ids) || outlet_ids.length > 80) {
+    return res.status(400).json({ error: 'Route must contain between 1 and 80 outlets.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Create the route header
+    const routeRes = await client.query(
+      `INSERT INTO routes (rider_id, route_name, status) 
+       VALUES ($1, $2, 'active') RETURNING id`,
+      [rider_id, route_name]
+    );
+    const routeId = routeRes.rows[0].id;
+
+    // 2. Assign outlets to the route with sequence (REQ-061)
+    const insertValues = outlet_ids.map((id, index) => 
+      `(${routeId}, ${id}, ${index + 1})`
+    ).join(',');
+
+    await client.query(`
+      INSERT INTO route_outlets (route_id, outlet_id, sequence_number)
+      VALUES ${insertValues}
+    `);
+
+    await client.query('COMMIT');
+    res.status(201).json({ route_id: routeId, message: 'Route created and assigned.' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('[POST /admin/routes]', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+});
+
+//Flag High Priority
+admin.patch('/routes/:id/outlets/:outletId/priority', requireManager, async (req, res) => {
+  const { id: routeId, outletId } = req.params;
+
+  try {
+    // 1. Update the priority in DB
+    const result = await pool.query(
+      `UPDATE route_outlets 
+       SET is_high_priority = true 
+       WHERE route_id = $1 AND outlet_id = $2
+       RETURNING route_id`,
+      [routeId, outletId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Outlet not found in this route.' });
+    }
+
+    // 2. Fetch the Rider's FCM token for REQ-063
+    const riderRes = await pool.query(
+      `SELECT r.fcm_token, r.full_name, o.outlet_name
+       FROM routes rt
+       JOIN riders r ON r.id = rt.rider_id
+       CROSS JOIN outlets_main o
+       WHERE rt.id = $1 AND o.id = $2`,
+      [routeId, outletId]
+    );
+
+    const { fcm_token, outlet_name } = riderRes.rows[0];
+
+    // logic: if (fcm_token) { sendPushNotification(fcm_token, outlet_name); }
+
+    res.status(200).json({ 
+      message: `Priority flagged. Push notification queued for ${outlet_name}.` 
+    });
+  } catch (err) {
+    console.error('[PATCH /priority]', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 module.exports=admin

@@ -124,7 +124,7 @@ auth.post('/rider/setup', async (req, res) => {
 // REQ-036, REQ-043 | Verifies rider token on every reconnect, returns account status
 // ─────────────────────────────────────────────
 auth.post('/rider/verify', async (req, res) => {
-  const authHeader = req.headers['authorization'];
+  const authHeader = req.headers['Authorization'];
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Missing or malformed Authorization header' });
