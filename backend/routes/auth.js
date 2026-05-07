@@ -187,4 +187,27 @@ auth.post('/rider/verify', async (req, res) => {
   }
 });
 
+// NOT INDICATED IN THE IMPLEMENTATION PLAN
+// PATCH /admin/riders/:id/reset-setup
+// Manager regenerates a setup code for a rider who has lost their token
+
+router.patch('/admin/riders/:id/reset-setup', requireManager, async (req, res) => {
+  const riderId = parseInt(req.params.id, 10);
+
+  // Generate a new readable setup code
+  const newSetupCode = crypto.randomBytes(4).toString('hex').toUpperCase();
+  // e.g. "A3F8B21C" — easy to read out over the phone
+
+  await pool.query(
+    `UPDATE riders
+     SET setup_code     = $1,
+         auth_token_hash = NULL,   -- invalidate existing token
+         last_active_at  = NULL
+     WHERE id = $2`,
+    [newSetupCode, riderId]
+  );
+
+  return res.status(200).json({ setup_code: newSetupCode });
+});
+
 module.exports = auth;
