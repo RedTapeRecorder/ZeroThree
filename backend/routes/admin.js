@@ -418,7 +418,7 @@ function formatVisit(row) {
 }
 
 //Riders Manager View API.
-
+//RIDER CREATION
 admin.post('/riders', requireManager, async (req, res) => {
   const { 
     full_name, phone_number, photo_url, 
@@ -447,5 +447,22 @@ admin.post('/riders', requireManager, async (req, res) => {
   }
 });
 
+//ALL RIDER STATISTICS
+admin.get('/riders', requireManager, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT 
+        id, full_name, phone_number, status, created_at, last_active_at,
+        (SELECT COUNT(DISTINCT(arrived_at::DATE)) FROM visits WHERE rider_id = riders.id) as days_active,
+        (SELECT COUNT(*) FROM visits WHERE rider_id = riders.id) as total_visits
+      FROM riders 
+      ORDER BY full_name ASC`
+    );
+    res.status(200).json(result.rows);
+  } catch (err) {
+    console.error('[GET /admin/riders]', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 module.exports=admin
