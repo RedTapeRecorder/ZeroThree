@@ -13,9 +13,15 @@ admin.get('/outlets', async (req, res) => {
         id,
         outlet_name,
         outlet_formaladdress,
+        outlet_barangay,
         outlet_status,
         location_pin_quality,
-        location_verification_level
+        location_verification_level,
+        show_last_visitor,
+        show_last_visit_time,
+        outlet_last_visit_time,
+        ST_Y(location::geometry) AS latitude,
+        ST_X(location::geometry) AS longitude
       FROM outlets_main
       WHERE 1=1
       ${status ? sql`AND outlet_status = ${status}` : sql``}

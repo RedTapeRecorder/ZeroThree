@@ -1,15 +1,14 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Login from './Login'
+import MapView from './MapView'
 
 function App() {
-  const token = localStorage.getItem('zt_token')
-
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/dashboard" element={<div>Dashboard coming soon</div>} />
-        <Route path="*" element={<Navigate to={token ? '/dashboard' : '/login'} />} />
+        <Route path="/outlets" element={<MapView />} />
+        <Route path="*" element={<Navigate to="/login" />} />
       </Routes>
     </BrowserRouter>
   )
