@@ -38,8 +38,8 @@ const EMPTY_FORM = {
 }
 
 const NAV_ITEMS = [
-  { key: 'map',   label: 'Outlet Map View',   icon: '🗺' },
-  { key: 'table', label: 'Outlet Table View',  icon: '☰' },
+  { key: 'map',   label: 'Outlet Map View',  icon: '🗺' },
+  { key: 'table', label: 'Outlet Table View', icon: '☰' },
 ]
 
 export default function OutletsPage() {
@@ -48,7 +48,10 @@ export default function OutletsPage() {
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState('')
   const [selected, setSelected]     = useState(null)
-  const [filters, setFilters]       = useState({ status: '', pin_quality: '', verification_level: '' })
+  const [filters, setFilters]       = useState({
+    status: '', pin_quality: '', verification_level: '',
+    city: '', area: '',
+  })
   const [counts, setCounts]         = useState({ ACTIVE: 0, INACTIVE: 0, PULLOUT: 0 })
 
   const [search, setSearch]         = useState('')
@@ -72,6 +75,8 @@ export default function OutletsPage() {
       if (filters.status)             params.status             = filters.status
       if (filters.pin_quality)        params.pin_quality        = filters.pin_quality
       if (filters.verification_level) params.verification_level = filters.verification_level
+      if (filters.city)               params.city               = filters.city
+      if (filters.area)               params.area               = filters.area
 
       const res = await axios.get(`${API_URL}/api/v1/admin/outlets`, { headers, params })
       const data = res.data
@@ -149,6 +154,8 @@ export default function OutletsPage() {
 
   const plottable = outlets.filter(o => o.latitude != null && o.longitude != null)
 
+  const hasFilters = filters.status || filters.pin_quality || filters.verification_level || filters.city || filters.area
+
   return (
     <div style={s.page}>
 
@@ -167,18 +174,13 @@ export default function OutletsPage() {
 
         <div style={s.divider} />
 
-        {/* Nav section label */}
-        <p style={s.navSection}>Outlets</p>
-
         {/* Nav items */}
+        <p style={s.navSection}>Outlets</p>
         <ul style={s.navList}>
           {NAV_ITEMS.map(item => (
             <li key={item.key}>
               <button
-                style={{
-                  ...s.navItem,
-                  ...(activeTab === item.key ? s.navItemActive : {}),
-                }}
+                style={{ ...s.navItem, ...(activeTab === item.key ? s.navItemActive : {}) }}
                 onClick={() => setActiveTab(item.key)}
               >
                 <span style={s.navIcon}>{item.icon}</span>
@@ -191,7 +193,7 @@ export default function OutletsPage() {
 
         <div style={s.divider} />
 
-        {/* Outlet counts */}
+        {/* Counts */}
         <p style={s.navSection}>Summary</p>
         <div style={s.counts}>
           {[['ACTIVE','Active'],['INACTIVE','Inactive'],['PULLOUT','Pullout']].map(([key, label]) => (
@@ -220,6 +222,7 @@ export default function OutletsPage() {
             <option value="INACTIVE">Inactive</option>
             <option value="PULLOUT">Pullout</option>
           </select>
+
           <select style={s.select} value={filters.pin_quality}
             onChange={e => setFilters(f => ({ ...f, pin_quality: e.target.value }))}>
             <option value="">All pin quality</option>
@@ -229,6 +232,7 @@ export default function OutletsPage() {
             <option value="mismatch">Mismatch</option>
             <option value="missing">Missing</option>
           </select>
+
           <select style={s.select} value={filters.verification_level}
             onChange={e => setFilters(f => ({ ...f, verification_level: e.target.value }))}>
             <option value="">All verification</option>
@@ -237,15 +241,34 @@ export default function OutletsPage() {
             <option value="staff">Staff</option>
             <option value="unverified">Unverified</option>
           </select>
-          {(filters.status || filters.pin_quality || filters.verification_level) && (
+
+          <select style={s.select} value={filters.city}
+            onChange={e => setFilters(f => ({ ...f, city: e.target.value }))}>
+            <option value="">All cities</option>
+            <option value="San Juan City">SAN JUAN</option>
+            <option value="Mandaluyong">Mandaluyong</option>
+            <option value="Quezon City">Quezon City</option>
+            <option value="Manila">Manila</option>
+          </select>
+
+          <select style={s.select} value={filters.area}
+            onChange={e => setFilters(f => ({ ...f, area: e.target.value }))}>
+            <option value="">All areas</option>
+            <option value="Tondo">Tondo</option>
+            <option value="Sta. Mesa">Sta. Mesa</option>
+            <option value="Pandacan">Pandacan</option>
+            <option value="Sampaloc">Sampaloc</option>
+          </select>
+
+          {hasFilters && (
             <button style={s.clearBtn}
-              onClick={() => setFilters({ status: '', pin_quality: '', verification_level: '' })}>
-              Clear filters
+              onClick={() => setFilters({ status: '', pin_quality: '', verification_level: '', city: '', area: '' })}>
+              Clear all filters
             </button>
           )}
         </div>
 
-        {/* Map legend — only shown on map tab */}
+        {/* Map legend */}
         {activeTab === 'map' && (
           <>
             <div style={s.divider} />
@@ -263,7 +286,7 @@ export default function OutletsPage() {
           </>
         )}
 
-        {/* Sign out at bottom */}
+        {/* Sign out */}
         <div style={{ marginTop: 'auto' }}>
           <div style={s.divider} />
           <button style={s.signOutBtn}
@@ -311,6 +334,8 @@ export default function OutletsPage() {
                 <div style={s.panelBody}>
                   <PRow label="Status"><Badge status={selected.outlet_status} /></PRow>
                   <PRow label="Barangay">{selected.outlet_barangay ?? '—'}</PRow>
+                  <PRow label="City">{selected.outlet_city ?? '—'}</PRow>
+                  <PRow label="Area">{selected.outlet_area ?? '—'}</PRow>
                   <PRow label="Pin quality">
                     <span style={qualityStyle(selected.location_pin_quality)}>
                       {selected.location_pin_quality ?? '—'}
@@ -361,7 +386,7 @@ export default function OutletsPage() {
               <table style={s.table}>
                 <thead>
                   <tr>
-                    {['ID','Name','Address','Barangay','Status','Pin Quality','Verification','Owner','Actions'].map(h => (
+                    {['ID','Name','Address','Barangay','City','Area','Status','Pin Quality','Verification','Owner','Actions'].map(h => (
                       <th key={h} style={s.th}>{h}</th>
                     ))}
                   </tr>
@@ -383,6 +408,14 @@ export default function OutletsPage() {
                           <td style={s.td}>
                             <input style={s.cellInput} value={editForm.outlet_barangay}
                               onChange={e => setEditForm(f => ({ ...f, outlet_barangay: e.target.value }))} />
+                          </td>
+                          <td style={s.td}>
+                            <input style={s.cellInput} value={editForm.outlet_city}
+                              onChange={e => setEditForm(f => ({ ...f, outlet_city: e.target.value }))} />
+                          </td>
+                          <td style={s.td}>
+                            <input style={s.cellInput} value={editForm.outlet_area}
+                              onChange={e => setEditForm(f => ({ ...f, outlet_area: e.target.value }))} />
                           </td>
                           <td style={s.td}>
                             <select style={s.cellSelect} value={editForm.outlet_status}
@@ -431,6 +464,8 @@ export default function OutletsPage() {
                           <td style={{ ...s.td, fontWeight: 500 }}>{outlet.outlet_name}</td>
                           <td style={s.td}>{outlet.outlet_formaladdress ?? '—'}</td>
                           <td style={s.td}>{outlet.outlet_barangay ?? '—'}</td>
+                          <td style={s.td}>{outlet.outlet_city ?? '—'}</td>
+                          <td style={s.td}>{outlet.outlet_area ?? '—'}</td>
                           <td style={s.td}><Badge status={outlet.outlet_status} /></td>
                           <td style={s.td}>
                             <span style={qualityStyle(outlet.location_pin_quality)}>
@@ -491,8 +526,14 @@ export default function OutletsPage() {
                     onChange={e => setCreateForm(f => ({ ...f, outlet_district: e.target.value }))} />
                 </Field>
                 <Field label="City">
-                  <input style={s.input} value={createForm.outlet_city}
-                    onChange={e => setCreateForm(f => ({ ...f, outlet_city: e.target.value }))} />
+                  <select style={s.input} value={createForm.outlet_city}
+                    onChange={e => setCreateForm(f => ({ ...f, outlet_city: e.target.value }))}>
+                    <option value="">Select city</option>
+                    <option value="San Juan City">SAN JUAN City</option>
+                    <option value="Mandaluyong">Mandaluyong</option>
+                    <option value="Quezon City">Quezon City</option>
+                    <option value="Manila">Manila</option>
+                  </select>
                 </Field>
                 <Field label="Area">
                   <input style={s.input} value={createForm.outlet_area}
@@ -598,7 +639,6 @@ function qualityStyle(q) {
 const s = {
   page:     { display: 'flex', height: '100vh', fontFamily: "'DM Sans','Segoe UI',sans-serif", overflow: 'hidden', background: '#f9fafb' },
 
-  // ── Nav ──
   nav:      { width: '260px', flexShrink: 0, background: '#fff', borderRight: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column', padding: '0', overflowY: 'auto' },
   brand:    { display: 'flex', alignItems: 'center', gap: '12px', padding: '20px 20px 16px' },
   logoMark: { width: '36px', height: '36px', background: '#f97316', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '800', color: '#fff', flexShrink: 0 },
@@ -607,35 +647,29 @@ const s = {
   divider:  { height: '1px', background: '#f3f4f6', margin: '4px 0' },
   navSection:{ fontSize: '10px', fontWeight: '700', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '12px 20px 4px' },
   navList:  { listStyle: 'none', margin: 0, padding: '0 8px' },
-  navItem:  { display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '9px 12px', borderRadius: '8px', border: 'none', background: 'none', fontSize: '13px', fontWeight: '500', color: '#374151', cursor: 'pointer', textAlign: 'left', position: 'relative', transition: 'background 0.1s' },
+  navItem:  { display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '9px 12px', borderRadius: '8px', border: 'none', background: 'none', fontSize: '13px', fontWeight: '500', color: '#374151', cursor: 'pointer', textAlign: 'left', position: 'relative' },
   navItemActive: { background: '#fff7ed', color: '#c2410c', fontWeight: '600' },
   navIcon:  { fontSize: '15px', flexShrink: 0 },
   navLabel: { flex: 1 },
   navIndicator: { width: '6px', height: '6px', borderRadius: '50%', background: '#f97316', flexShrink: 0 },
 
-  // ── Counts ──
   counts:   { padding: '4px 20px 8px', display: 'flex', flexDirection: 'column', gap: '7px' },
   countRow: { display: 'flex', alignItems: 'center', gap: '8px' },
   dot:      { width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, display: 'inline-block' },
   countLabel:{ fontSize: '13px', color: '#374151', flex: 1 },
   countVal: { fontSize: '13px', fontWeight: '600', color: '#111827' },
 
-  // ── Filters ──
   filters:  { padding: '4px 20px 8px', display: 'flex', flexDirection: 'column', gap: '8px' },
   select:   { width: '100%', padding: '7px 10px', fontSize: '12px', border: '1px solid #e5e7eb', borderRadius: '6px', background: '#fff', color: '#111827', cursor: 'pointer' },
-  clearBtn: { padding: '6px', fontSize: '12px', color: '#6b7280', background: 'none', border: '1px solid #e5e7eb', borderRadius: '6px', cursor: 'pointer' },
+  clearBtn: { padding: '6px', fontSize: '12px', color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' },
 
-  // ── Sign out ──
   signOutBtn: { display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '12px 20px', border: 'none', background: 'none', fontSize: '13px', color: '#9ca3af', cursor: 'pointer', textAlign: 'left' },
 
-  // ── Main ──
   main:     { flex: 1, position: 'relative', overflow: 'hidden' },
 
-  // ── Banners ──
   loadingBanner: { position: 'absolute', top: '12px', left: '50%', transform: 'translateX(-50%)', zIndex: 1000, background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '8px 16px', fontSize: '13px', color: '#6b7280', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' },
   errorBanner:   { position: 'absolute', top: '12px', left: '50%', transform: 'translateX(-50%)', zIndex: 1000, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '8px 16px', fontSize: '13px', color: '#b91c1c' },
 
-  // ── Map panel ──
   panel:    { position: 'absolute', top: '12px', right: '12px', zIndex: 1000, width: '300px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', boxShadow: '0 4px 16px rgba(0,0,0,0.10)', overflow: 'hidden' },
   panelHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '16px', borderBottom: '1px solid #f3f4f6' },
   panelName:{ fontSize: '14px', fontWeight: '600', color: '#111827', margin: 0 },
@@ -646,7 +680,6 @@ const s = {
   prowLabel:{ color: '#6b7280' },
   prowValue:{ color: '#111827', fontWeight: '500', textAlign: 'right', maxWidth: '180px' },
 
-  // ── Table ──
   tableContainer: { display: 'flex', flexDirection: 'column', height: '100%', padding: '24px 28px', boxSizing: 'border-box' },
   tableHeader:    { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '16px', gap: '16px', flexWrap: 'wrap' },
   pageTitle:      { fontSize: '20px', fontWeight: '700', color: '#111827', margin: 0 },
@@ -668,7 +701,6 @@ const s = {
   inlineError:    { fontSize: '11px', color: '#b91c1c', margin: '4px 0 0' },
   emptyState:     { padding: '48px', textAlign: 'center', color: '#9ca3af', fontSize: '14px' },
 
-  // ── Modal ──
   modalOverlay:   { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center' },
   modal:          { background: '#fff', borderRadius: '12px', width: '680px', maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' },
   modalHeader:    { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: '1px solid #f3f4f6' },
