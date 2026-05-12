@@ -737,4 +737,98 @@ admin.get('/outlets/:id/photo', requireManager, async (req, res) => {
   }
 })
 
+// GET single route with outlets
+admin.get('/routes/:id', requireManager, async (req, res) => {
+  const routeId = parseInt(req.params.id, 10)
+  try {
+    const route = await pool.query(
+      `SELECT r.id, r.route_name, r.is_active, r.created_at,
+              ri.id AS rider_id, ri.full_name AS rider_name
+       FROM routes r
+       JOIN riders ri ON ri.id = r.assigned_rider_id
+       WHERE r.id = $1`,
+      [routeId]
+    )
+    if (route.rows.length === 0) return res.status(404).json({ error: 'Route not found' })
+
+    const outlets = await pool.query(
+      `SELECT ro.sequence_order, ro.is_high_priority,
+              o.id, o.outlet_name, o.outlet_barangay, o.outlet_formaladdress
+       FROM route_outlets ro
+       JOIN outlets_main o ON o.id = ro.outlet_id
+       WHERE ro.route_id = $1
+       ORDER BY ro.sequence_order ASC`,
+      [routeId]
+    )
+
+    res.status(200).json({ ...route.rows[0], outlets: outlets.rows })
+  } catch (err) {
+    console.error('[GET /admin/routes/:id]', err.message)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// PATCH route name / active status
+admin.patch('/routes/:id', requireManager, async (req, res) => {
+  const routeId = parseInt(req.params.id, 10)
+  const { route_name, is_active } = req.body
+  try {
+    const result = await pool.query(
+      `UPDATE routes SET
+         route_name = COALESCE($1, route_name),
+         is_active  = COALESCE($2, is_active)
+       WHERE id = $3
+       RETURNING id, route_name, is_active`,
+      [route_name ?? null, is_active ?? null, routeId]
+    )
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Route not found' })
+    res.status(200).json(result.rows[0])
+  } catch (err) {
+    console.error('[PATCH /admin/routes/:id]', err.message)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// PUT reorder outlets — accepts full ordered array of outlet_ids
+admin.put('/routes/:id/sequence', requireManager, async (req, res) => {
+  const routeId = parseInt(req.params.id, 10)
+  const { outlet_ids } = req.body  // ordered array
+
+  if (!Array.isArray(outlet_ids) || outlet_ids.length === 0) {
+    return res.status(400).json({ error: 'outlet_ids array is required' })
+  }
+
+  try {
+    await sql.begin(async txSql => {
+      for (let i = 0; i < outlet_ids.length; i++) {
+        await txSql`
+          UPDATE route_outlets
+          SET sequence_order = ${i + 1}
+          WHERE route_id = ${routeId} AND outlet_id = ${outlet_ids[i]}
+        `
+      }
+    })
+    res.status(200).json({ message: 'Sequence updated' })
+  } catch (err) {
+    console.error('[PUT /admin/routes/:id/sequence]', err.message)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// DELETE outlet from route
+admin.delete('/routes/:id/outlets/:outletId', requireManager, async (req, res) => {
+  const routeId  = parseInt(req.params.id, 10)
+  const outletId = parseInt(req.params.outletId, 10)
+  try {
+    await pool.query(
+      `DELETE FROM route_outlets WHERE route_id = $1 AND outlet_id = $2`,
+      [routeId, outletId]
+    )
+    res.status(200).json({ message: 'Outlet removed from route' })
+  } catch (err) {
+    console.error('[DELETE /admin/routes/:id/outlets/:outletId]', err.message)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 module.exports=admin
