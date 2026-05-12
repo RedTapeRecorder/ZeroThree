@@ -173,6 +173,21 @@ export default function OutletsPage() {
         </div>
 
         <div style={s.divider} />
+        <p style={s.navSection}>Management</p>
+        <ul style={s.navList}>
+          <li>
+            <button style={s.navItem} onClick={() => window.location.href = '/riders'}>
+              <span style={s.navIcon}>👤</span>
+              <span style={s.navLabel}>Riders</span>
+            </button>
+          </li>
+          <li>
+            <button style={s.navItem} onClick={() => window.location.href = '/routes'}>
+              <span style={s.navIcon}>🛵</span>
+              <span style={s.navLabel}>Routes</span>
+            </button>
+          </li>
+        </ul>
 
         {/* Nav items */}
         <p style={s.navSection}>Outlets</p>
@@ -190,7 +205,7 @@ export default function OutletsPage() {
             </li>
           ))}
         </ul>
-
+        
         <div style={s.divider} />
 
         {/* Counts */}
@@ -267,6 +282,9 @@ export default function OutletsPage() {
             </button>
           )}
         </div>
+
+        <div style={s.divider} />
+
 
         {/* Map legend */}
         {activeTab === 'map' && (
