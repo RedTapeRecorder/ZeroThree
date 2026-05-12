@@ -3,6 +3,7 @@ import Login from './Login'
 import MapView from './MapView'
 import RidersView from './RidersView'
 import RoutesView from './RoutesView'
+import PhotoReviewView from './PhotoReviewView'
 
 function App() {
   return (
@@ -13,6 +14,7 @@ function App() {
         <Route path="/riders"  element={<RidersView />} />
         <Route path="/routes"  element={<RoutesView />} />
         <Route path="*"        element={<Navigate to="/login" />} />
+        <Route path="/photos" element={<PhotoReviewView />} />
       </Routes>
     </BrowserRouter>
   )

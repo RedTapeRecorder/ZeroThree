@@ -607,45 +607,41 @@ admin.patch('/riders/:id/fcm-token', async (req, res) => {
 //ROUTES 
 //Manager makes a route
 admin.post('/routes', requireManager, async (req, res) => {
-  const { rider_id, route_name, outlet_ids } = req.body; // outlet_ids is an array [1, 2, 3...]
+  const { rider_id, route_name, outlet_ids } = req.body
 
-  // REQ-060: Max 80 outlets per route
-  if (!Array.isArray(outlet_ids) || outlet_ids.length > 80) {
-    return res.status(400).json({ error: 'Route must contain between 1 and 80 outlets.' });
+  if (!Array.isArray(outlet_ids) || outlet_ids.length === 0 || outlet_ids.length > 80) {
+    return res.status(400).json({ error: 'Route must contain between 1 and 80 outlets.' })
   }
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
+    let routeId
 
-    // 1. Create the route header
-    const routeRes = await client.query(
-      `INSERT INTO routes (rider_id, route_name, status) 
-       VALUES ($1, $2, 'active') RETURNING id`,
-      [rider_id, route_name]
-    );
-    const routeId = routeRes.rows[0].id;
+    await sql.begin(async txSql => {
+      // 1. Create the route header
+      const routeRes = await txSql`
+        INSERT INTO routes (assigned_rider_id, route_name, is_active)
+        VALUES (${rider_id}, ${route_name}, true)
+        RETURNING id
+      `
+      routeId = routeRes[0].id
 
-    // 2. Assign outlets to the route with sequence (REQ-061)
-    const insertValues = outlet_ids.map((id, index) => 
-      `(${routeId}, ${id}, ${index + 1})`
-    ).join(',');
+      // 2. Insert route outlets with sequence
+      const values = outlet_ids.map((id, index) => ({
+        route_id:        routeId,
+        outlet_id:       id,
+        sequence_order:  index + 1,
+        is_high_priority: false,
+      }))
 
-    await client.query(`
-      INSERT INTO route_outlets (route_id, outlet_id, sequence_number)
-      VALUES ${insertValues}
-    `);
+      await txSql`INSERT INTO routes_outlets ${txSql(values)}`
+    })
 
-    await client.query('COMMIT');
-    res.status(201).json({ route_id: routeId, message: 'Route created and assigned.' });
+    res.status(201).json({ route_id: routeId, message: 'Route created and assigned.' })
   } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('[POST /admin/routes]', err.message);
-    res.status(500).json({ error: 'Internal server error' });
-  } finally {
-    client.release();
+    console.error('[POST /admin/routes]', err.message)
+    res.status(500).json({ error: err.message })
   }
-});
+})
 
 //Flag High Priority
 admin.patch('/routes/:id/outlets/:outletId/priority', requireManager, async (req, res) => {
@@ -654,7 +650,7 @@ admin.patch('/routes/:id/outlets/:outletId/priority', requireManager, async (req
   try {
     // 1. Update the priority in DB
     const result = await pool.query(
-      `UPDATE route_outlets 
+      `UPDATE routes_outlets 
        SET is_high_priority = true 
        WHERE route_id = $1 AND outlet_id = $2
        RETURNING route_id`,
@@ -687,5 +683,58 @@ admin.patch('/routes/:id/outlets/:outletId/priority', requireManager, async (req
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// GEMINI 5/12/2026
+// GET /api/v1/admin/routes
+// Returns all routes with assigned rider names
+// Used by the Route Builder and Dashboard in Phase 3
+admin.get('/routes', requireManager, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        r.id,
+        r.route_name,
+        r.is_active,
+        r.created_at,
+        r.assigned_rider_id,
+        rd.full_name AS rider_name,
+        (SELECT COUNT(*) FROM routes_outlets WHERE route_id = r.id) AS outlet_count
+      FROM routes r
+      LEFT JOIN riders rd ON r.assigned_rider_id = rd.id
+      ORDER BY r.created_at DESC
+    `);
+
+    return res.status(200).json({
+      total: result.rows.length,
+      routes: result.rows
+    });
+  } catch (err) {
+    console.error('[GET /admin/routes]', err.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
+// CLAUDE 5/12/2026
+// Retrieves outlet's picture
+admin.get('/outlets/:id/photo', requireManager, async (req, res) => {
+  const outletId = parseInt(req.params.id, 10)
+  try {
+    const result = await pool.query(
+      `SELECT id, cloudinary_url, submitted_at
+       FROM outlet_photos
+       WHERE outlet_id = $1
+         AND status = 'approved'
+         AND is_current = TRUE
+       LIMIT 1`,
+      [outletId]
+    )
+    if (result.rows.length === 0) return res.status(200).json({ photo: null })
+    return res.status(200).json({ photo: { url: result.rows[0].cloudinary_url } })
+  } catch (err) {
+    console.error('[GET /admin/outlets/:id/photo]', err.message)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
 
 module.exports=admin

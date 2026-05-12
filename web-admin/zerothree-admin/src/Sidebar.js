@@ -4,6 +4,7 @@ const NAV = [
     items: [
       { label: 'Riders',  icon: '👤', href: '/riders', key: 'riders' },
       { label: 'Routes',  icon: '🛵', href: '/routes', key: 'routes' },
+      { label: 'Photo Review', icon: '📷', href: '/photos', key: 'photos' },
     ],
   },
   {

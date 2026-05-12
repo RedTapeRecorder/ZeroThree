@@ -48,6 +48,8 @@ export default function OutletsPage() {
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState('')
   const [selected, setSelected]     = useState(null)
+  const [selectedPhoto, setSelectedPhoto]   = useState(null)
+  const [photoLoading, setPhotoLoading]     = useState(false)
   const [filters, setFilters]       = useState({
     status: '', pin_quality: '', verification_level: '',
     city: '', area: '',
@@ -90,6 +92,29 @@ export default function OutletsPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function fetchPhoto(outletId) {
+    setSelectedPhoto(null)
+    setPhotoLoading(true)
+    try {
+      const res = await axios.get(`${API_URL}/api/v1/admin/outlets/${outletId}/photo`, { headers })
+      setSelectedPhoto(res.data.photo)
+    } catch {
+      setSelectedPhoto(null)
+    } finally {
+      setPhotoLoading(false)
+    }
+  }
+
+  function handlePinClick(outlet) {
+    setSelected(outlet)
+    fetchPhoto(outlet.id)
+  }
+
+  function closePanel() {
+    setSelected(null)
+    setSelectedPhoto(null)
   }
 
   const filtered = outlets.filter(o => {
@@ -153,7 +178,6 @@ export default function OutletsPage() {
   }
 
   const plottable = outlets.filter(o => o.latitude != null && o.longitude != null)
-
   const hasFilters = filters.status || filters.pin_quality || filters.verification_level || filters.city || filters.area
 
   return (
@@ -163,7 +187,6 @@ export default function OutletsPage() {
           LEFT NAV SIDEBAR
       ══════════════════════════════════════ */}
       <nav style={s.nav}>
-        {/* Brand */}
         <div style={s.brand}>
           <div style={s.logoMark}>Z3</div>
           <div>
@@ -189,7 +212,7 @@ export default function OutletsPage() {
           </li>
         </ul>
 
-        {/* Nav items */}
+        <div style={s.divider} />
         <p style={s.navSection}>Outlets</p>
         <ul style={s.navList}>
           {NAV_ITEMS.map(item => (
@@ -205,10 +228,9 @@ export default function OutletsPage() {
             </li>
           ))}
         </ul>
-        
+
         <div style={s.divider} />
 
-        {/* Counts */}
         <p style={s.navSection}>Summary</p>
         <div style={s.counts}>
           {[['ACTIVE','Active'],['INACTIVE','Inactive'],['PULLOUT','Pullout']].map(([key, label]) => (
@@ -227,7 +249,6 @@ export default function OutletsPage() {
 
         <div style={s.divider} />
 
-        {/* Filters */}
         <p style={s.navSection}>Filters</p>
         <div style={s.filters}>
           <select style={s.select} value={filters.status}
@@ -285,11 +306,8 @@ export default function OutletsPage() {
 
         <div style={s.divider} />
 
-
-        {/* Map legend */}
         {activeTab === 'map' && (
           <>
-            <div style={s.divider} />
             <p style={s.navSection}>Pin legend</p>
             <div style={s.filters}>
               <div style={s.countRow}>
@@ -301,10 +319,10 @@ export default function OutletsPage() {
                 <span style={s.countLabel}>Low confidence</span>
               </div>
             </div>
+            <div style={s.divider} />
           </>
         )}
 
-        {/* Sign out */}
         <div style={{ marginTop: 'auto' }}>
           <div style={s.divider} />
           <button style={s.signOutBtn}
@@ -335,11 +353,12 @@ export default function OutletsPage() {
                   key={outlet.id}
                   center={[outlet.latitude, outlet.longitude]}
                   {...pinStyle(outlet)}
-                  eventHandlers={{ click: () => setSelected(outlet) }}
+                  eventHandlers={{ click: () => handlePinClick(outlet) }}
                 />
               ))}
             </MapContainer>
 
+            {/* ── Outlet panel ── */}
             {selected && (
               <div style={s.panel}>
                 <div style={s.panelHeader}>
@@ -347,10 +366,34 @@ export default function OutletsPage() {
                     <p style={s.panelName}>{selected.outlet_name}</p>
                     <p style={s.panelAddr}>{selected.outlet_formaladdress}</p>
                   </div>
-                  <button style={s.closeBtn} onClick={() => setSelected(null)}>✕</button>
+                  <button style={s.closeBtn} onClick={closePanel}>✕</button>
                 </div>
+
+                {/* Photo section */}
+                <div style={s.photoSection}>
+                  {photoLoading && (
+                    <div style={s.photoPlaceholder}>
+                      <span style={s.photoPlaceholderText}>Loading photo…</span>
+                    </div>
+                  )}
+                  {!photoLoading && selectedPhoto && (
+                    <img
+                      src={selectedPhoto.url}
+                      alt={selected.outlet_name}
+                      style={s.photo}
+                    />
+                  )}
+                  {!photoLoading && !selectedPhoto && (
+                    <div style={s.photoPlaceholder}>
+                      <span style={s.photoPlaceholderIcon}>📷</span>
+                      <span style={s.photoPlaceholderText}>No photo available</span>
+                    </div>
+                  )}
+                </div>
+
                 <div style={s.panelBody}>
                   <PRow label="Status"><Badge status={selected.outlet_status} /></PRow>
+                  <PRow label="Owner">{selected.owner_name ?? '—'}</PRow>
                   <PRow label="Barangay">{selected.outlet_barangay ?? '—'}</PRow>
                   <PRow label="City">{selected.outlet_city ?? '—'}</PRow>
                   <PRow label="Area">{selected.outlet_area ?? '—'}</PRow>
@@ -688,15 +731,22 @@ const s = {
   loadingBanner: { position: 'absolute', top: '12px', left: '50%', transform: 'translateX(-50%)', zIndex: 1000, background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '8px 16px', fontSize: '13px', color: '#6b7280', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' },
   errorBanner:   { position: 'absolute', top: '12px', left: '50%', transform: 'translateX(-50%)', zIndex: 1000, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '8px 16px', fontSize: '13px', color: '#b91c1c' },
 
-  panel:    { position: 'absolute', top: '12px', right: '12px', zIndex: 1000, width: '300px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', boxShadow: '0 4px 16px rgba(0,0,0,0.10)', overflow: 'hidden' },
-  panelHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '16px', borderBottom: '1px solid #f3f4f6' },
-  panelName:{ fontSize: '14px', fontWeight: '600', color: '#111827', margin: 0 },
-  panelAddr:{ fontSize: '12px', color: '#6b7280', margin: '2px 0 0' },
-  closeBtn: { background: 'none', border: 'none', fontSize: '16px', color: '#9ca3af', cursor: 'pointer', padding: '0 0 0 8px', flexShrink: 0 },
-  panelBody:{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '10px' },
-  prow:     { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' },
-  prowLabel:{ color: '#6b7280' },
-  prowValue:{ color: '#111827', fontWeight: '500', textAlign: 'right', maxWidth: '180px' },
+  panel:        { position: 'absolute', top: '12px', right: '12px', zIndex: 1000, width: '300px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', boxShadow: '0 4px 16px rgba(0,0,0,0.10)', overflow: 'hidden', maxHeight: 'calc(100vh - 24px)', display: 'flex', flexDirection: 'column' },
+  panelHeader:  { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '16px', borderBottom: '1px solid #f3f4f6', flexShrink: 0 },
+  panelName:    { fontSize: '14px', fontWeight: '600', color: '#111827', margin: 0 },
+  panelAddr:    { fontSize: '12px', color: '#6b7280', margin: '2px 0 0' },
+  closeBtn:     { background: 'none', border: 'none', fontSize: '16px', color: '#9ca3af', cursor: 'pointer', padding: '0 0 0 8px', flexShrink: 0 },
+
+  photoSection: { flexShrink: 0 },
+  photo:        { width: '100%', height: '180px', objectFit: 'cover', display: 'block' },
+  photoPlaceholder: { height: '140px', background: '#f3f4f6', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px' },
+  photoPlaceholderIcon: { fontSize: '24px', opacity: 0.4 },
+  photoPlaceholderText: { fontSize: '12px', color: '#9ca3af' },
+
+  panelBody:    { padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto' },
+  prow:         { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' },
+  prowLabel:    { color: '#6b7280' },
+  prowValue:    { color: '#111827', fontWeight: '500', textAlign: 'right', maxWidth: '180px' },
 
   tableContainer: { display: 'flex', flexDirection: 'column', height: '100%', padding: '24px 28px', boxSizing: 'border-box' },
   tableHeader:    { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '16px', gap: '16px', flexWrap: 'wrap' },

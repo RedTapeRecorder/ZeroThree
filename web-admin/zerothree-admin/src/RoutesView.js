@@ -245,7 +245,7 @@ export default function RoutesView() {
               </tr>
             </thead>
             <tbody>
-              {routes.map(route => (
+              { (routes.routes || []).map(route => (
                 <tr key={route.id} style={s.tr}>
                   <td style={s.td}>#{route.id}</td>
                   <td style={{ ...s.td, fontWeight: 600 }}>{route.route_name}</td>
