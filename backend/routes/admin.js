@@ -665,7 +665,7 @@ admin.patch('/routes/:id/outlets/:outletId/priority', requireManager, async (req
     const riderRes = await pool.query(
       `SELECT r.fcm_token, r.full_name, o.outlet_name
        FROM routes rt
-       JOIN riders r ON r.id = rt.rider_id
+       JOIN riders r ON r.id = rt.id
        CROSS JOIN outlets_main o
        WHERE rt.id = $1 AND o.id = $2`,
       [routeId, outletId]
@@ -753,11 +753,13 @@ admin.get('/routes/:id', requireManager, async (req, res) => {
 
     const outlets = await pool.query(
       `SELECT ro.sequence_order, ro.is_high_priority,
-              o.id, o.outlet_name, o.outlet_barangay, o.outlet_formaladdress
-       FROM route_outlets ro
-       JOIN outlets_main o ON o.id = ro.outlet_id
-       WHERE ro.route_id = $1
-       ORDER BY ro.sequence_order ASC`,
+              o.id, o.outlet_name, o.outlet_barangay, o.outlet_formaladdress,
+              ST_Y(o.location::geometry) AS latitude,
+              ST_X(o.location::geometry) AS longitude
+      FROM routes_outlets ro
+      JOIN outlets_main o ON o.id = ro.outlet_id
+      WHERE ro.route_id = $1
+      ORDER BY ro.sequence_order ASC`,
       [routeId]
     )
 
@@ -802,7 +804,7 @@ admin.put('/routes/:id/sequence', requireManager, async (req, res) => {
     await sql.begin(async txSql => {
       for (let i = 0; i < outlet_ids.length; i++) {
         await txSql`
-          UPDATE route_outlets
+          UPDATE routes_outlets
           SET sequence_order = ${i + 1}
           WHERE route_id = ${routeId} AND outlet_id = ${outlet_ids[i]}
         `
@@ -821,12 +823,32 @@ admin.delete('/routes/:id/outlets/:outletId', requireManager, async (req, res) =
   const outletId = parseInt(req.params.outletId, 10)
   try {
     await pool.query(
-      `DELETE FROM route_outlets WHERE route_id = $1 AND outlet_id = $2`,
+      `DELETE FROM routes_outlets WHERE route_id = $1 AND outlet_id = $2`,
       [routeId, outletId]
     )
     res.status(200).json({ message: 'Outlet removed from route' })
   } catch (err) {
     console.error('[DELETE /admin/routes/:id/outlets/:outletId]', err.message)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+admin.patch('/routes/:id/outlets/:outletId/unpriority', requireManager, async (req, res) => {
+  const { id: routeId, outletId } = req.params
+  try {
+    const result = await pool.query(
+      `UPDATE routes_outlets 
+       SET is_high_priority = false 
+       WHERE route_id = $1 AND outlet_id = $2
+       RETURNING route_id`,
+      [routeId, outletId]
+    )
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Outlet not found in this route.' })
+    }
+    res.status(200).json({ message: 'Priority removed.' })
+  } catch (err) {
+    console.error('[PATCH /unpriority]', err.message)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
