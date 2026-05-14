@@ -620,7 +620,7 @@ admin.post('/routes', requireManager, async (req, res) => {
       // 1. Create the route header
       const routeRes = await txSql`
         INSERT INTO routes (assigned_rider_id, route_name, is_active)
-        VALUES (${rider_id}, ${route_name}, true)
+        VALUES (${rider_id ?? null}, ${route_name}, true)
         RETURNING id
       `
       routeId = routeRes[0].id
@@ -744,9 +744,9 @@ admin.get('/routes/:id', requireManager, async (req, res) => {
     const route = await pool.query(
       `SELECT r.id, r.route_name, r.is_active, r.created_at,
               ri.id AS rider_id, ri.full_name AS rider_name
-       FROM routes r
-       JOIN riders ri ON ri.id = r.assigned_rider_id
-       WHERE r.id = $1`,
+      FROM routes r
+      LEFT JOIN riders ri ON ri.id = r.assigned_rider_id
+      WHERE r.id = $1`,
       [routeId]
     )
     if (route.rows.length === 0) return res.status(404).json({ error: 'Route not found' })
@@ -770,18 +770,18 @@ admin.get('/routes/:id', requireManager, async (req, res) => {
   }
 })
 
-// PATCH route name / active status
 admin.patch('/routes/:id', requireManager, async (req, res) => {
   const routeId = parseInt(req.params.id, 10)
-  const { route_name, is_active } = req.body
+  const { route_name, is_active, assigned_rider_id } = req.body
   try {
     const result = await pool.query(
       `UPDATE routes SET
-         route_name = COALESCE($1, route_name),
-         is_active  = COALESCE($2, is_active)
-       WHERE id = $3
-       RETURNING id, route_name, is_active`,
-      [route_name ?? null, is_active ?? null, routeId]
+         route_name         = COALESCE($1, route_name),
+         is_active          = COALESCE($2, is_active),
+         assigned_rider_id  = COALESCE($3, assigned_rider_id)
+       WHERE id = $4
+       RETURNING id, route_name, is_active, assigned_rider_id`,
+      [route_name ?? null, is_active ?? null, assigned_rider_id ?? null, routeId]
     )
     if (result.rows.length === 0) return res.status(404).json({ error: 'Route not found' })
     res.status(200).json(result.rows[0])
@@ -849,6 +849,94 @@ admin.patch('/routes/:id/outlets/:outletId/unpriority', requireManager, async (r
     res.status(200).json({ message: 'Priority removed.' })
   } catch (err) {
     console.error('[PATCH /unpriority]', err.message)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+admin.get('/routes/:id/osrm', requireManager, async (req, res) => {
+  const routeId = parseInt(req.params.id, 10)
+  try {
+    const outlets = await pool.query(
+      `SELECT ST_Y(o.location::geometry) AS latitude,
+              ST_X(o.location::geometry) AS longitude
+       FROM routes_outlets ro
+       JOIN outlets_main o ON o.id = ro.outlet_id
+       WHERE ro.route_id = $1
+         AND o.location IS NOT NULL
+       ORDER BY ro.sequence_order ASC`,
+      [routeId]
+    )
+
+    if (outlets.rows.length < 2) {
+      return res.status(200).json({ geometry: null, reason: 'Not enough points' })
+    }
+
+    const coords = outlets.rows
+      .map(r => `${r.longitude},${r.latitude}`)
+      .join(';')
+
+    const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`
+
+    const fetch = (await import('node-fetch')).default
+    const osrmRes = await fetch(osrmUrl)
+    const osrmData = await osrmRes.json()
+
+    if (osrmData.code !== 'Ok') {
+      return res.status(200).json({ geometry: null, reason: osrmData.message })
+    }
+
+    return res.status(200).json({
+      geometry: osrmData.routes[0].geometry.coordinates,
+      distance_meters: osrmData.routes[0].distance,
+      duration_seconds: osrmData.routes[0].duration,
+    })
+  } catch (err) {
+    console.error('[GET /admin/routes/:id/osrm]', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+admin.delete('/routes/:id', requireManager, async (req, res) => {
+  const routeId = parseInt(req.params.id, 10)
+  try {
+    await sql.begin(async txSql => {
+      await txSql`DELETE FROM routes_outlets WHERE route_id = ${routeId}`
+      await txSql`DELETE FROM routes WHERE id = ${routeId}`
+    })
+    res.status(200).json({ message: 'Route deleted' })
+  } catch (err) {
+    console.error('[DELETE /admin/routes/:id]', err.message)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+admin.post('/routes/:id/duplicate', requireManager, async (req, res) => {
+  const routeId = parseInt(req.params.id, 10)
+  try {
+    let newRouteId
+    await sql.begin(async txSql => {
+      const original = await txSql`
+        SELECT route_name, assigned_rider_id FROM routes WHERE id = ${routeId}
+      `
+      if (original.length === 0) throw new Error('Route not found')
+
+      const newRoute = await txSql`
+        INSERT INTO routes (route_name, assigned_rider_id, is_active)
+        VALUES (${original[0].route_name + ' (copy)'}, ${original[0].assigned_rider_id}, false)
+        RETURNING id
+      `
+      newRouteId = newRoute[0].id
+
+      await txSql`
+        INSERT INTO routes_outlets (route_id, outlet_id, sequence_order, is_high_priority)
+        SELECT ${newRouteId}, outlet_id, sequence_order, is_high_priority
+        FROM routes_outlets
+        WHERE route_id = ${routeId}
+      `
+    })
+    res.status(201).json({ route_id: newRouteId, message: 'Route duplicated' })
+  } catch (err) {
+    console.error('[POST /admin/routes/:id/duplicate]', err.message)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
