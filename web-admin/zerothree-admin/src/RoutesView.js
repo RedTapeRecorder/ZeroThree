@@ -425,8 +425,47 @@ export default function RoutesView() {
               </button>
             </div>
           </div>
-          </>
-        )}
+          {error && <div style={s.errorBanner}>{error}</div>}
+
+          <div style={s.tableWrapper}>
+            <table style={s.table}>
+              <thead>
+                <tr>
+                  {['ID','Route name','Assigned rider','Outlets','Status','Created','Actions'].map(h => (
+                    <th key={h} style={s.th}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRoutes.map(route => (
+                  <tr key={route.id} style={s.tr}>
+                    <td style={s.td}>#{route.id}</td>
+                    <td style={{ ...s.td, fontWeight: 600 }}>{route.route_name}</td>
+                    <td style={s.td}>{route.rider_name ?? '—'}</td>
+                    <td style={s.td}>{route.outlet_count} outlets</td>
+                    <td style={s.td}>
+                      <span style={route.is_active ? s.activeBadge : s.inactiveBadge}>
+                        {route.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td style={s.td}>{fmt(route.created_at)}</td>
+                    <td style={s.td}>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button style={s.editBtn} onClick={() => openEdit(route.id)}>Edit</button>
+                        <button style={s.dupBtn} onClick={() => duplicateRoute(route.id)}>⧉ Duplicate</button>
+                        <button style={s.delBtn} onClick={() => deleteRoute(route.id)}>✕ Delete</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {filteredRoutes.length === 0 && !loading && (
+              <div style={s.emptyState}>No routes found.</div>
+            )}
+          </div>
+        </>
+      )}
 
         {/* ══════════════════════════════════
             EDIT ROUTE
