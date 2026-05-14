@@ -379,10 +379,19 @@ export default function RoutesView() {
     return mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins} min`
   }
 
+  const [routeFilter, setRouteFilter] = useState('all')
+
+  const filteredRoutes = routes.filter(r => {
+    if (routeFilter === 'active')   return r.is_active === true
+    if (routeFilter === 'inactive') return r.is_active === false
+    return true
+  })
+
   const plottable = outlets.filter(o => o.latitude != null && o.longitude != null)
   const minimapPoints = editOutlets.filter(o => o.latitude != null && o.longitude != null).map(o => [o.latitude, o.longitude])
   const skippedCount = builder.inPolygon.filter(o => !builder.sequence.some(s => s.id === o.id)).length
   const sequenceLine = builder.sequence.filter(o => o.latitude != null && o.longitude != null).map(o => [o.latitude, o.longitude])
+
 
   return (
     <div style={s.page}>
@@ -395,52 +404,27 @@ export default function RoutesView() {
         {view === 'list' && (
           <>
             <div style={s.header}>
-              <div>
-                <h1 style={s.pageTitle}>Routes</h1>
-                <p style={s.pageSubtitle}>{routes.length} routes created</p>
+            <div>
+              <h1 style={s.pageTitle}>Routes</h1>
+              <p style={s.pageSubtitle}>{filteredRoutes.length} of {routes.length} routes</p>
+            </div>
+            <div style={s.toolbar}>
+              <div style={s.filterToggle}>
+                {[['all','Both'],['active','Active only'],['inactive','Inactive only']].map(([val, label]) => (
+                  <button
+                    key={val}
+                    style={{ ...s.filterBtn, ...(routeFilter === val ? s.filterBtnActive : {}) }}
+                    onClick={() => setRouteFilter(val)}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
               <button style={s.createBtn} onClick={() => { setView('builder'); resetBuilder() }}>
                 + New route
               </button>
             </div>
-            {error && <div style={s.errorBanner}>{error}</div>}
-            <div style={s.tableWrapper}>
-              <table style={s.table}>
-                <thead>
-                  <tr>
-                    {['ID','Route name','Assigned rider','Outlets','Status','Created','Actions'].map(h => (
-                      <th key={h} style={s.th}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {routes.map(route => (
-                    <tr key={route.id} style={s.tr}>
-                      <td style={s.td}>#{route.id}</td>
-                      <td style={{ ...s.td, fontWeight: 600 }}>{route.route_name}</td>
-                      <td style={s.td}>{route.rider_name ?? '—'}</td>
-                      <td style={s.td}>{route.outlet_count} outlets</td>
-                      <td style={s.td}>
-                        <span style={route.is_active ? s.activeBadge : s.inactiveBadge}>
-                          {route.is_active ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td style={s.td}>{fmt(route.created_at)}</td>
-                      <td style={s.td}>
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                          <button style={s.editBtn} onClick={() => openEdit(route.id)}>Edit</button>
-                          <button style={s.dupBtn} onClick={() => duplicateRoute(route.id)}>⧉ Duplicate</button>
-                          <button style={s.delBtn} onClick={() => deleteRoute(route.id)}>✕ Delete</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {routes.length === 0 && !loading && (
-                <div style={s.emptyState}>No routes yet. Click "+ New route" to build one.</div>
-              )}
-            </div>
+          </div>
           </>
         )}
 
@@ -1029,4 +1013,9 @@ const s = {
   toast:            { position: 'fixed', bottom: '24px', right: '24px', zIndex: 3000, padding: '12px 20px', borderRadius: '10px', border: '1px solid', fontSize: '13px', fontWeight: '600', boxShadow: '0 4px 16px rgba(0,0,0,0.12)' },
   dupBtn: { padding: '4px 10px', fontSize: '12px', fontWeight: '600', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '5px', cursor: 'pointer', color: '#1d4ed8' },
   delBtn: { padding: '4px 10px', fontSize: '12px', fontWeight: '600', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '5px', cursor: 'pointer', color: '#b91c1c' },
+  filterToggle:   { display: 'flex', border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden' },
+  filterBtn:      { padding: '7px 14px', fontSize: '12px', fontWeight: '600', border: 'none', background: '#fff', color: '#6b7280', cursor: 'pointer', borderRight: '1px solid #e5e7eb' },
+  filterBtnActive:{ background: '#f97316', color: '#fff' },
+
+
 }
