@@ -14,6 +14,7 @@ const cloudinary = require('cloudinary').v2;
 // Called by rider app — lazy loaded only when outlet detail screen is opened
 // Photos are NEVER included in shift-start sync payload
 // ─────────────────────────────────────────────
+// RIDER VERSION
 photos .get('/outlets/:id/photo', requireRider, async (req, res) => {
   const outletId = parseInt(req.params.id, 10);
 

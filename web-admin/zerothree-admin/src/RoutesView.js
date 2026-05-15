@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { MapContainer, TileLayer, CircleMarker, Polyline, Tooltip, useMap, useMapEvents } from 'react-leaflet'
+import { MapContainer, TileLayer, CircleMarker, Polyline, Tooltip, useMap } from 'react-leaflet'
 import axios from 'axios'
 import L from 'leaflet'
 import Sidebar from './Sidebar'
@@ -12,7 +12,7 @@ const THUNDERFOREST_KEY = process.env.REACT_APP_THUNDERFOREST_KEY
 const SAN_JUAN = [14.6007, 121.0355]
 
 // ── Draw control ─────────────────────────────
-function DrawControl({ onPolygonDrawn, disabled }) {
+function DrawControl({ onPolygonDrawn }) {
   const map = useMap()
   const drawnLayersRef = useRef(new L.FeatureGroup())
   const drawControlRef = useRef(null)
@@ -20,7 +20,6 @@ function DrawControl({ onPolygonDrawn, disabled }) {
   useEffect(() => {
     const drawnLayers = drawnLayersRef.current
     map.addLayer(drawnLayers)
-
     const drawControl = new L.Control.Draw({
       draw: {
         polygon: {
@@ -33,20 +32,14 @@ function DrawControl({ onPolygonDrawn, disabled }) {
       },
       edit: { featureGroup: drawnLayers, remove: true },
     })
-
     drawControlRef.current = drawControl
-
-    if (!disabled) {
-      map.addControl(drawControl)
-    }
-
+    map.addControl(drawControl)
     map.on(L.Draw.Event.CREATED, e => {
       drawnLayers.clearLayers()
       drawnLayers.addLayer(e.layer)
       onPolygonDrawn(e.layer.getLatLngs()[0])
     })
     map.on(L.Draw.Event.DELETED, () => onPolygonDrawn(null))
-
     return () => {
       if (drawControlRef.current) map.removeControl(drawControlRef.current)
       map.removeLayer(drawnLayers)
@@ -65,7 +58,7 @@ function FitBounds({ points }) {
     if (points.length === 0) return
     if (points.length === 1) { map.setView(points[0], 16); return }
     map.fitBounds(L.latLngBounds(points), { padding: [40, 40] })
-  }, []) // only on mount
+  }, []) // eslint-disable-line
   return null
 }
 
@@ -83,17 +76,12 @@ function pointInPolygon(point, polygon) {
 }
 
 const EMPTY_BUILDER = {
-  // Step 1 — polygon
-  polygon: null,
-  inPolygon: [],       // outlets inside the polygon
-  // Step 2 — sequencing
-  sequence: [],        // outlets clicked in order
+  inPolygon: [],
+  sequence: [],
   highPriority: new Set(),
-  // Route meta
   routeName: '',
   assignedRider: '',
-  // UI
-  step: 1,             // 1 = draw polygon, 2 = click sequence
+  step: 1,
   saving: false,
   saveError: '',
   savedRouteId: null,
@@ -101,12 +89,14 @@ const EMPTY_BUILDER = {
 }
 
 export default function RoutesView() {
+  // ── All state at the top ─────────────────
   const [view, setView]               = useState('list')
   const [routes, setRoutes]           = useState([])
   const [outlets, setOutlets]         = useState([])
   const [riders, setRiders]           = useState([])
   const [loading, setLoading]         = useState(true)
   const [error, setError]             = useState('')
+  const [routeFilter, setRouteFilter] = useState('all')
 
   const [builder, setBuilder]         = useState(EMPTY_BUILDER)
   const [polygon, setPolygon]         = useState(null)
@@ -129,6 +119,7 @@ export default function RoutesView() {
   const token = localStorage.getItem('zt_token')
   const headers = { Authorization: `Bearer ${token}` }
 
+  // ── Effects ──────────────────────────────
   useEffect(() => {
     fetchRoutes()
     fetchOutlets()
@@ -136,20 +127,30 @@ export default function RoutesView() {
   }, [])
 
   useEffect(() => {
-  console.log('polygon changed:', polygon)
-  console.log('outlets available:', outlets.length)
-  if (!polygon) {
-    setBuilder(b => ({ ...b, inPolygon: [], sequence: [], step: 1 }))
-    return
-  }
-  const inside = outlets.filter(o =>
-    o.latitude != null && o.longitude != null &&
-    pointInPolygon({ lat: o.latitude, lng: o.longitude }, polygon)
-  )
-  console.log('inside polygon:', inside.length)
-  setBuilder(b => ({ ...b, inPolygon: inside, sequence: [], step: 2 }))
-}, [polygon, outlets])
+    if (!polygon) {
+      setBuilder(b => ({ ...b, inPolygon: [], sequence: [], step: 1 }))
+      return
+    }
+    const inside = outlets.filter(o =>
+      o.latitude != null && o.longitude != null &&
+      pointInPolygon({ lat: o.latitude, lng: o.longitude }, polygon)
+    )
+    setBuilder(b => ({ ...b, inPolygon: inside, sequence: [], step: 2 }))
+  }, [polygon, outlets])
 
+  // ── Derived ──────────────────────────────
+  const filteredRoutes = routes.filter(r => {
+    if (routeFilter === 'active')   return r.is_active === true
+    if (routeFilter === 'inactive') return r.is_active === false
+    return true
+  })
+
+  const plottable     = outlets.filter(o => o.latitude != null && o.longitude != null)
+  const minimapPoints = editOutlets.filter(o => o.latitude != null && o.longitude != null).map(o => [o.latitude, o.longitude])
+  const sequenceLine  = builder.sequence.filter(o => o.latitude != null && o.longitude != null).map(o => [o.latitude, o.longitude])
+  const skippedCount  = builder.inPolygon.filter(o => !builder.sequence.some(s => s.id === o.id)).length
+
+  // ── Fetch functions ───────────────────────
   async function fetchRoutes() {
     setLoading(true)
     try {
@@ -160,6 +161,21 @@ export default function RoutesView() {
     finally { setLoading(false) }
   }
 
+  async function fetchOutlets() {
+    try {
+      const res = await axios.get(`${API_URL}/api/v1/admin/outlets`, { headers })
+      setOutlets(res.data.filter(o => o.outlet_status === 'ACTIVE'))
+    } catch {}
+  }
+
+  async function fetchRiders() {
+    try {
+      const res = await axios.get(`${API_URL}/api/v1/admin/riders`, { headers })
+      setRiders(res.data.filter(r => r.status === 'active'))
+    } catch {}
+  }
+
+  // ── Route list actions ────────────────────
   async function deleteRoute(routeId) {
     if (!window.confirm('Delete this route? This cannot be undone.')) return
     try {
@@ -177,58 +193,29 @@ export default function RoutesView() {
     } catch { showToast('Failed to duplicate route', 'error') }
   }
 
-  async function fetchOutlets() {
-    try {
-      const res = await axios.get(`${API_URL}/api/v1/admin/outlets`, { headers })
-      setOutlets(res.data.filter(o => o.outlet_status === 'ACTIVE'))
-    } catch {}
-  }
-
-  async function fetchRiders() {
-    try {
-      const res = await axios.get(`${API_URL}/api/v1/admin/riders`, { headers })
-      setRiders(res.data.filter(r => r.status === 'active'))
-    } catch {}
-  }
-
-  // ── Builder: pin click ───────────────────
+  // ── Builder ───────────────────────────────
   function handleOutletClick(outlet) {
     if (builder.step !== 2) return
-    // Only allow clicks on outlets inside the polygon
-    const isInPolygon = builder.inPolygon.some(o => o.id === outlet.id)
-    if (!isInPolygon) return
-
-    const alreadySelected = builder.sequence.some(o => o.id === outlet.id)
-    if (alreadySelected) {
-      // Deselect — remove from sequence
-      setBuilder(b => ({
-        ...b,
-        sequence: b.sequence.filter(o => o.id !== outlet.id),
-        highPriority: (() => {
-          const next = new Set(b.highPriority)
-          next.delete(outlet.id)
-          return next
-        })(),
-      }))
+    if (!builder.inPolygon.some(o => o.id === outlet.id)) return
+    const already = builder.sequence.some(o => o.id === outlet.id)
+    if (already) {
+      setBuilder(b => {
+        const next = new Set(b.highPriority)
+        next.delete(outlet.id)
+        return { ...b, sequence: b.sequence.filter(o => o.id !== outlet.id), highPriority: next }
+      })
     } else {
-      // Add to sequence
       setBuilder(b => ({ ...b, sequence: [...b.sequence, outlet] }))
     }
   }
 
-  // ── Builder: submit ──────────────────────
   function handleSubmitClick() {
-    const { routeName, assignedRider, sequence, inPolygon } = builder
+    const { routeName, sequence, inPolygon } = builder
     if (!routeName.trim()) { setBuilder(b => ({ ...b, saveError: 'Route name is required.' })); return }
-    if (sequence.length === 0) { setBuilder(b => ({ ...b, saveError: 'Click at least one outlet on the map to set the route sequence.' })); return }
+    if (sequence.length === 0) { setBuilder(b => ({ ...b, saveError: 'Click at least one outlet to set the sequence.' })); return }
     if (sequence.length > 80)  { setBuilder(b => ({ ...b, saveError: 'Maximum 80 outlets per route.' })); return }
-
     const skipped = inPolygon.filter(o => !sequence.some(s => s.id === o.id))
-    if (skipped.length > 0) {
-      setBuilder(b => ({ ...b, showSkipWarning: true, saveError: '' }))
-      return
-    }
-
+    if (skipped.length > 0) { setBuilder(b => ({ ...b, showSkipWarning: true, saveError: '' })); return }
     submitRoute()
   }
 
@@ -237,7 +224,8 @@ export default function RoutesView() {
     setBuilder(b => ({ ...b, saving: true, saveError: '', showSkipWarning: false }))
     try {
       const res = await axios.post(`${API_URL}/api/v1/admin/routes`, {
-        rider_id:   parseInt(assignedRider, 10),
+        // Send null if no rider selected — backend handles nullable rider_id
+        rider_id:   assignedRider ? parseInt(assignedRider, 10) : null,
         route_name: routeName,
         outlet_ids: sequence.map(o => o.id),
       }, { headers })
@@ -260,6 +248,7 @@ export default function RoutesView() {
     setBuilder(EMPTY_BUILDER)
     setPolygon(null)
   }
+
   // ── Edit ─────────────────────────────────
   async function openEdit(routeId) {
     setEditError('')
@@ -364,6 +353,7 @@ export default function RoutesView() {
     }
   }
 
+  // ── Helpers ───────────────────────────────
   function showToast(message, type) {
     setToast({ message, type })
     setTimeout(() => setToast(null), 3000)
@@ -373,26 +363,14 @@ export default function RoutesView() {
     if (!m) return '—'
     return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`
   }
+
   function fmtDuration(s) {
     if (!s) return '—'
     const mins = Math.round(s / 60)
     return mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins} min`
   }
 
-  const [routeFilter, setRouteFilter] = useState('all')
-
-  const filteredRoutes = routes.filter(r => {
-    if (routeFilter === 'active')   return r.is_active === true
-    if (routeFilter === 'inactive') return r.is_active === false
-    return true
-  })
-
-  const plottable = outlets.filter(o => o.latitude != null && o.longitude != null)
-  const minimapPoints = editOutlets.filter(o => o.latitude != null && o.longitude != null).map(o => [o.latitude, o.longitude])
-  const skippedCount = builder.inPolygon.filter(o => !builder.sequence.some(s => s.id === o.id)).length
-  const sequenceLine = builder.sequence.filter(o => o.latitude != null && o.longitude != null).map(o => [o.latitude, o.longitude])
-
-
+  // ────────────────────────────────────────────
   return (
     <div style={s.page}>
       <Sidebar activePage="routes" />
@@ -404,68 +382,67 @@ export default function RoutesView() {
         {view === 'list' && (
           <>
             <div style={s.header}>
-            <div>
-              <h1 style={s.pageTitle}>Routes</h1>
-              <p style={s.pageSubtitle}>{filteredRoutes.length} of {routes.length} routes</p>
-            </div>
-            <div style={s.toolbar}>
-              <div style={s.filterToggle}>
-                {[['all','Both'],['active','Active only'],['inactive','Inactive only']].map(([val, label]) => (
-                  <button
-                    key={val}
-                    style={{ ...s.filterBtn, ...(routeFilter === val ? s.filterBtnActive : {}) }}
-                    onClick={() => setRouteFilter(val)}
-                  >
-                    {label}
-                  </button>
-                ))}
+              <div>
+                <h1 style={s.pageTitle}>Routes</h1>
+                <p style={s.pageSubtitle}>{filteredRoutes.length} of {routes.length} routes</p>
               </div>
-              <button style={s.createBtn} onClick={() => { setView('builder'); resetBuilder() }}>
-                + New route
-              </button>
-            </div>
-          </div>
-          {error && <div style={s.errorBanner}>{error}</div>}
-
-          <div style={s.tableWrapper}>
-            <table style={s.table}>
-              <thead>
-                <tr>
-                  {['ID','Route name','Assigned rider','Outlets','Status','Created','Actions'].map(h => (
-                    <th key={h} style={s.th}>{h}</th>
+              <div style={s.toolbar}>
+                <div style={s.filterToggle}>
+                  {[['all','Both'],['active','Active only'],['inactive','Inactive only']].map(([val, label]) => (
+                    <button key={val}
+                      style={{ ...s.filterBtn, ...(routeFilter === val ? s.filterBtnActive : {}) }}
+                      onClick={() => setRouteFilter(val)}>
+                      {label}
+                    </button>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRoutes.map(route => (
-                  <tr key={route.id} style={s.tr}>
-                    <td style={s.td}>#{route.id}</td>
-                    <td style={{ ...s.td, fontWeight: 600 }}>{route.route_name}</td>
-                    <td style={s.td}>{route.rider_name ?? '—'}</td>
-                    <td style={s.td}>{route.outlet_count} outlets</td>
-                    <td style={s.td}>
-                      <span style={route.is_active ? s.activeBadge : s.inactiveBadge}>
-                        {route.is_active ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td style={s.td}>{fmt(route.created_at)}</td>
-                    <td style={s.td}>
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <button style={s.editBtn} onClick={() => openEdit(route.id)}>Edit</button>
-                        <button style={s.dupBtn} onClick={() => duplicateRoute(route.id)}>⧉ Duplicate</button>
-                        <button style={s.delBtn} onClick={() => deleteRoute(route.id)}>✕ Delete</button>
-                      </div>
-                    </td>
+                </div>
+                <button style={s.createBtn} onClick={() => { setView('builder'); resetBuilder() }}>
+                  + New route
+                </button>
+              </div>
+            </div>
+
+            {error && <div style={s.errorBanner}>{error}</div>}
+
+            <div style={s.tableWrapper}>
+              <table style={s.table}>
+                <thead>
+                  <tr>
+                    {['ID','Route name','Assigned rider','Outlets','Status','Created','Actions'].map(h => (
+                      <th key={h} style={s.th}>{h}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            {filteredRoutes.length === 0 && !loading && (
-              <div style={s.emptyState}>No routes found.</div>
-            )}
-          </div>
-        </>
-      )}
+                </thead>
+                <tbody>
+                  {filteredRoutes.map(route => (
+                    <tr key={route.id} style={s.tr}>
+                      <td style={s.td}>#{route.id}</td>
+                      <td style={{ ...s.td, fontWeight: 600 }}>{route.route_name}</td>
+                      <td style={s.td}>{route.rider_name ?? '—'}</td>
+                      <td style={s.td}>{route.outlet_count} outlets</td>
+                      <td style={s.td}>
+                        <span style={route.is_active ? s.activeBadge : s.inactiveBadge}>
+                          {route.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td style={s.td}>{fmt(route.created_at)}</td>
+                      <td style={s.td}>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button style={s.editBtn} onClick={() => openEdit(route.id)}>Edit</button>
+                          <button style={s.dupBtn} onClick={() => duplicateRoute(route.id)}>⧉ Duplicate</button>
+                          <button style={s.delBtn} onClick={() => deleteRoute(route.id)}>✕ Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {filteredRoutes.length === 0 && !loading && (
+                <div style={s.emptyState}>No routes found.</div>
+              )}
+            </div>
+          </>
+        )}
 
         {/* ══════════════════════════════════
             EDIT ROUTE
@@ -485,10 +462,11 @@ export default function RoutesView() {
                 </button>
               </div>
             </div>
+
             {editError && <div style={s.errorBanner}>{editError}</div>}
 
             <div style={s.editLayout}>
-              {/* Meta */}
+              {/* ── Meta column ── */}
               <div style={s.editMeta}>
                 <p style={s.sectionLabel}>Route details</p>
                 <div style={s.fieldGroup}>
@@ -513,13 +491,18 @@ export default function RoutesView() {
                           { assigned_rider_id: riderId ? parseInt(riderId, 10) : null },
                           { headers }
                         )
-                        setEditRoute(r => ({ ...r, rider_id: riderId, rider_name: riders.find(r => r.id === parseInt(riderId))?.full_name ?? null }))
+                        setEditRoute(r => ({
+                          ...r,
+                          rider_id: riderId,
+                          rider_name: riders.find(r => String(r.id) === riderId)?.full_name ?? null,
+                        }))
                       } catch { setEditError('Failed to update rider.') }
                     }}>
                     <option value="">No rider assigned</option>
                     {riders.map(r => <option key={r.id} value={r.id}>{r.full_name}</option>)}
                   </select>
                 </div>
+
                 <div style={s.divider} />
                 <p style={s.sectionLabel}>Stats</p>
                 <div style={s.statRow}><span style={s.statLabel}>Total outlets</span><span style={s.statVal}>{editOutlets.length}</span></div>
@@ -528,6 +511,7 @@ export default function RoutesView() {
                   <div style={s.statRow}><span style={s.statLabel}>Est. distance</span><span style={s.statVal}>{fmtDistance(osrmStats.distance_meters)}</span></div>
                   <div style={s.statRow}><span style={s.statLabel}>Est. drive time</span><span style={s.statVal}>{fmtDuration(osrmStats.duration_seconds)}</span></div>
                 </>}
+
                 <div style={s.divider} />
                 <p style={s.sectionLabel}>Export</p>
                 <button style={s.gmapsBtn} onClick={openGoogleMaps}>
@@ -538,17 +522,17 @@ export default function RoutesView() {
                     ? `${Math.ceil(editOutlets.filter(o => o.latitude != null).length / 10)} legs`
                     : 'Full route in one tab'}
                 </p>
+
                 <div style={s.divider} />
                 <p style={s.hintText}>Drag ⠿ to reorder. ↑↓ for precise moves. ★ toggles priority.</p>
               </div>
 
-              {/* Minimap */}
+              {/* ── Minimap column ── */}
               <div style={s.minimapPane}>
                 <div style={s.minimapHeader}>
                   <p style={s.sectionLabel}>Route map</p>
                   <div style={s.minimapControls}>
-                    <button
-                      style={{ ...s.toggleBtn, ...(showOsrm ? s.toggleBtnActive : {}) }}
+                    <button style={{ ...s.toggleBtn, ...(showOsrm ? s.toggleBtnActive : {}) }}
                       onClick={() => setShowOsrm(v => !v)}>
                       {osrmLoading ? '⏳' : '🛣'} Street routing
                     </button>
@@ -562,7 +546,7 @@ export default function RoutesView() {
                       <span style={s.minimapEmptyText}>No outlets with coordinates</span>
                     </div>
                   ) : (
-                    <MapContainer key="builder-map" center={minimapPoints[0] ?? SAN_JUAN} zoom={14}
+                    <MapContainer key="edit-minimap" center={minimapPoints[0] ?? SAN_JUAN} zoom={14}
                       style={{ width: '100%', height: '100%' }}>
                       <TileLayer
                         url={`https://{s}.tile.thunderforest.com/neighbourhood/{z}/{x}/{y}.png?apikey=${THUNDERFOREST_KEY}`}
@@ -613,7 +597,7 @@ export default function RoutesView() {
                 )}
               </div>
 
-              {/* Sequence */}
+              {/* ── Sequence column ── */}
               <div style={s.editSequence}>
                 <div style={s.sequenceHeader}>
                   <p style={s.sectionLabel}>Outlet sequence</p>
@@ -668,42 +652,39 @@ export default function RoutesView() {
                     : `Step 2 — Click outlets in the order the rider should visit them (${builder.sequence.length} selected)`}
                 </p>
               </div>
-              <button style={s.cancelBtn} onClick={() => { setView('list'); resetBuilder() }}>
-                ← Back
-              </button>
+              <button style={s.cancelBtn} onClick={() => { setView('list'); resetBuilder() }}>← Back</button>
             </div>
 
             {/* Step indicator */}
             <div style={s.stepBar}>
-              <div style={{ ...s.stepItem, ...(builder.step >= 1 ? s.stepItemActive : {}) }}>
-                <span style={s.stepNum}>1</span>
-                <span style={s.stepLabel}>Draw polygon</span>
-              </div>
-              <div style={s.stepLine} />
-              <div style={{ ...s.stepItem, ...(builder.step >= 2 ? s.stepItemActive : {}) }}>
-                <span style={s.stepNum}>2</span>
-                <span style={s.stepLabel}>Click sequence</span>
-              </div>
-              <div style={s.stepLine} />
-              <div style={{ ...s.stepItem, ...(builder.savedRouteId ? s.stepItemActive : {}) }}>
-                <span style={s.stepNum}>3</span>
-                <span style={s.stepLabel}>Save route</span>
-              </div>
+              {[
+                [1, 'Draw polygon'],
+                [2, 'Click sequence'],
+                [3, 'Save route'],
+              ].map(([num, label], i) => (
+                <>
+                  {i > 0 && <div key={`line-${num}`} style={s.stepLine} />}
+                  <div key={num} style={{
+                    ...s.stepItem,
+                    ...(builder.step >= num || (num === 3 && builder.savedRouteId) ? s.stepItemActive : {}),
+                  }}>
+                    <span style={s.stepNum}>{num}</span>
+                    <span style={s.stepLabel}>{label}</span>
+                  </div>
+                </>
+              ))}
             </div>
 
             {builder.savedRouteId ? (
               <div style={s.successBlock}>
                 <div style={s.successIcon}>✓</div>
                 <p style={s.successTitle}>Route created</p>
-                <p style={s.successSub}>Route #{builder.savedRouteId} has been assigned.</p>
-                <button style={s.createBtn} onClick={() => { setView('list'); resetBuilder() }}>
-                  View all routes
-                </button>
+                <p style={s.successSub}>Route #{builder.savedRouteId} has been saved.</p>
+                <button style={s.createBtn} onClick={() => { setView('list'); resetBuilder() }}>View all routes</button>
                 <button style={s.cancelBtn} onClick={resetBuilder}>Build another</button>
               </div>
             ) : (
               <div style={s.builderLayout}>
-
                 {/* Map */}
                 <div style={s.mapPane}>
                   <MapContainer key="builder-map" center={SAN_JUAN} zoom={14} style={{ width: '100%', height: '100%' }}>
@@ -711,29 +692,19 @@ export default function RoutesView() {
                       url={`https://{s}.tile.thunderforest.com/neighbourhood/{z}/{x}/{y}.png?apikey=${THUNDERFOREST_KEY}`}
                       attribution='&copy; <a href="https://www.thunderforest.com/">Thunderforest</a>'
                     />
-
-                    {/* Auto-fit to all active outlets on mount */}
                     <FitBounds points={plottable.map(o => [o.latitude, o.longitude])} />
-
-                    {/* Polygon draw tool — always available */}
                     <DrawControl onPolygonDrawn={p => setPolygon(p)} />
 
-                    {/* Sequence line — connects clicked outlets in order */}
                     {sequenceLine.length > 1 && (
                       <Polyline positions={sequenceLine} color="#f97316" weight={2.5} opacity={0.8} dashArray="6 4" />
                     )}
 
-                    {/* All plottable outlets */}
                     {plottable.map(outlet => {
-                      const isInPolygon  = builder.inPolygon.some(o => o.id === outlet.id)
-                      const seqIdx       = builder.sequence.findIndex(o => o.id === outlet.id)
-                      const isSequenced  = seqIdx !== -1
-                      const isHP         = builder.highPriority.has(outlet.id)
+                      const isInPolygon = builder.inPolygon.some(o => o.id === outlet.id)
+                      const seqIdx      = builder.sequence.findIndex(o => o.id === outlet.id)
+                      const isSequenced = seqIdx !== -1
+                      const isHP        = builder.highPriority.has(outlet.id)
 
-                      // Color logic:
-                      // - Outside polygon (or no polygon drawn): grey, small, not clickable visually
-                      // - Inside polygon, not yet clicked: purple outline, medium
-                      // - Inside polygon, clicked: orange filled, larger, numbered
                       let color, fillColor, fillOpacity, radius, weight
                       if (!polygon || !isInPolygon) {
                         color = '#9ca3af'; fillColor = '#9ca3af'; fillOpacity = 0.3; radius = 5; weight = 1
@@ -749,20 +720,13 @@ export default function RoutesView() {
                         <CircleMarker
                           key={`${outlet.id}-${isInPolygon}-${isSequenced}-${isHP}`}
                           center={[outlet.latitude, outlet.longitude]}
-                          radius={radius}
-                          color={color}
-                          fillColor={fillColor}
-                          fillOpacity={fillOpacity}
-                          weight={weight}
-                          eventHandlers={{
-                            click: () => handleOutletClick(outlet),
-                          }}
+                          radius={radius} color={color} fillColor={fillColor}
+                          fillOpacity={fillOpacity} weight={weight}
+                          eventHandlers={{ click: () => handleOutletClick(outlet) }}
                         >
                           {isSequenced && (
                             <Tooltip permanent direction="top" offset={[0, -10]}>
-                              <span style={{ fontSize: '10px', fontWeight: '800' }}>
-                                {seqIdx + 1}
-                              </span>
+                              <span style={{ fontSize: '10px', fontWeight: '800' }}>{seqIdx + 1}</span>
                             </Tooltip>
                           )}
                           {isInPolygon && !isSequenced && (
@@ -775,7 +739,6 @@ export default function RoutesView() {
                     })}
                   </MapContainer>
 
-                  {/* Map legend */}
                   <div style={s.mapLegend}>
                     <LegendItem color="#9ca3af" label="Outside area" />
                     <LegendItem color="#6366f1" label="In area — click to add" />
@@ -783,12 +746,9 @@ export default function RoutesView() {
                     <LegendItem color="#dc2626" label="High priority" />
                   </div>
 
-                  {/* Step 2 hint overlay */}
                   {builder.step === 2 && (
                     <div style={s.mapHintOverlay}>
-                      <span style={s.mapHintText}>
-                        Click purple pins to add them to your route in sequence order
-                      </span>
+                      <span style={s.mapHintText}>Click purple pins to add them in sequence order</span>
                     </div>
                   )}
                 </div>
@@ -817,14 +777,12 @@ export default function RoutesView() {
                     {builder.step === 1 && (
                       <p style={s.hintText}>Draw a polygon on the map first to define your route area.</p>
                     )}
-
                     {builder.step === 2 && builder.sequence.length === 0 && (
                       <p style={s.hintText}>
                         {builder.inPolygon.length} outlet{builder.inPolygon.length !== 1 ? 's' : ''} inside your area.
-                        Click them on the map in the order the rider should visit.
+                        Click them in the order the rider should visit.
                       </p>
                     )}
-
                     {builder.step === 2 && skippedCount > 0 && builder.sequence.length > 0 && (
                       <div style={s.skipInfo}>
                         <span style={s.skipDot} />
@@ -848,8 +806,7 @@ export default function RoutesView() {
                                 next.has(outlet.id) ? next.delete(outlet.id) : next.add(outlet.id)
                                 setBuilder(b => ({ ...b, highPriority: next }))
                               }}>★</button>
-                            <button style={s.removeBtn}
-                              onClick={() => handleOutletClick(outlet)}>✕</button>
+                            <button style={s.removeBtn} onClick={() => handleOutletClick(outlet)}>✕</button>
                           </div>
                         </div>
                       ))}
@@ -868,11 +825,9 @@ export default function RoutesView() {
                   <div style={{ padding: '16px' }}>
                     <button
                       style={{
-                        ...s.createBtn,
-                        width: '100%',
-                        padding: '11px',
+                        ...s.createBtn, width: '100%', padding: '11px',
                         opacity: builder.saving || builder.step === 1 || builder.sequence.length === 0 ? 0.5 : 1,
-                        cursor: builder.saving || builder.step === 1 || builder.sequence.length === 0 ? 'not-allowed' : 'pointer',
+                        cursor:  builder.saving || builder.step === 1 || builder.sequence.length === 0 ? 'not-allowed' : 'pointer',
                       }}
                       disabled={builder.saving || builder.step === 1 || builder.sequence.length === 0}
                       onClick={handleSubmitClick}
@@ -887,7 +842,7 @@ export default function RoutesView() {
         )}
       </div>
 
-      {/* ── Skip warning modal ── */}
+      {/* Skip warning modal */}
       {builder.showSkipWarning && (
         <div style={s.modalOverlay}>
           <div style={s.modal}>
@@ -899,12 +854,11 @@ export default function RoutesView() {
                 <strong>{skippedCount} outlet{skippedCount !== 1 ? 's' : ''}</strong> inside your polygon {skippedCount !== 1 ? 'were' : 'was'} not added to the sequence.
               </p>
               <p style={{ fontSize: '13px', color: '#6b7280', margin: '8px 0 0' }}>
-                These outlets will not be included in the route. Continue with {builder.sequence.length} outlet{builder.sequence.length !== 1 ? 's' : ''} only, or go back and add the missing ones.
+                These outlets will not be included. Continue with {builder.sequence.length} outlet{builder.sequence.length !== 1 ? 's' : ''} only, or go back and add the missing ones.
               </p>
             </div>
             <div style={s.modalFooter}>
-              <button style={s.cancelBtn}
-                onClick={() => setBuilder(b => ({ ...b, showSkipWarning: false }))}>
+              <button style={s.cancelBtn} onClick={() => setBuilder(b => ({ ...b, showSkipWarning: false }))}>
                 Go back and add them
               </button>
               <button style={s.createBtn} onClick={submitRoute}>
@@ -915,12 +869,13 @@ export default function RoutesView() {
         </div>
       )}
 
+      {/* Toast */}
       {toast && (
         <div style={{
           ...s.toast,
-          background: toast.type === 'success' ? '#dcfce7' : '#fee2e2',
+          background:  toast.type === 'success' ? '#dcfce7' : '#fee2e2',
           borderColor: toast.type === 'success' ? '#bbf7d0' : '#fecaca',
-          color: toast.type === 'success' ? '#15803d' : '#b91c1c',
+          color:       toast.type === 'success' ? '#15803d' : '#b91c1c',
         }}>
           ✓ {toast.message}
         </div>
@@ -950,14 +905,17 @@ const s = {
   header:           { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '12px', gap: '16px', flexWrap: 'wrap' },
   pageTitle:        { fontSize: '20px', fontWeight: '700', color: '#111827', margin: 0 },
   pageSubtitle:     { fontSize: '13px', color: '#9ca3af', margin: '2px 0 0' },
-  toolbar:          { display: 'flex', gap: '10px' },
+  toolbar:          { display: 'flex', gap: '10px', alignItems: 'center' },
   createBtn:        { padding: '9px 18px', background: '#f97316', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' },
   cancelBtn:        { padding: '9px 18px', background: '#fff', color: '#374151', border: '1px solid #e5e7eb', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
   errorBanner:      { background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#b91c1c', marginBottom: '12px' },
   clearBtn:         { padding: '6px 10px', fontSize: '12px', color: '#6b7280', background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: '6px', cursor: 'pointer', width: '100%' },
 
-  // Step bar
-  stepBar:          { display: 'flex', alignItems: 'center', marginBottom: '12px', gap: '0' },
+  filterToggle:     { display: 'flex', border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden' },
+  filterBtn:        { padding: '7px 14px', fontSize: '12px', fontWeight: '600', border: 'none', background: '#fff', color: '#6b7280', cursor: 'pointer', borderRight: '1px solid #e5e7eb' },
+  filterBtnActive:  { background: '#f97316', color: '#fff' },
+
+  stepBar:          { display: 'flex', alignItems: 'center', marginBottom: '12px' },
   stepItem:         { display: 'flex', alignItems: 'center', gap: '6px', opacity: 0.4 },
   stepItemActive:   { opacity: 1 },
   stepNum:          { width: '22px', height: '22px', borderRadius: '50%', background: '#f97316', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '700', flexShrink: 0 },
@@ -970,11 +928,12 @@ const s = {
   tr:               { borderBottom: '1px solid #f3f4f6' },
   td:               { padding: '10px 14px', color: '#111827', verticalAlign: 'middle' },
   editBtn:          { padding: '4px 12px', fontSize: '12px', fontWeight: '600', background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: '5px', cursor: 'pointer', color: '#374151' },
+  dupBtn:           { padding: '4px 10px', fontSize: '12px', fontWeight: '600', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '5px', cursor: 'pointer', color: '#1d4ed8' },
+  delBtn:           { padding: '4px 10px', fontSize: '12px', fontWeight: '600', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '5px', cursor: 'pointer', color: '#b91c1c' },
   activeBadge:      { padding: '2px 8px', borderRadius: '99px', fontSize: '12px', fontWeight: '600', background: '#dcfce7', color: '#15803d' },
   inactiveBadge:    { padding: '2px 8px', borderRadius: '99px', fontSize: '12px', fontWeight: '600', background: '#f3f4f6', color: '#6b7280' },
   emptyState:       { padding: '48px', textAlign: 'center', color: '#9ca3af', fontSize: '14px' },
 
-  // Edit
   editLayout:       { display: 'flex', flex: 1, gap: '12px', overflow: 'hidden' },
   editMeta:         { width: '210px', flexShrink: 0, background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '16px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' },
   divider:          { height: '1px', background: '#f3f4f6', flexShrink: 0 },
@@ -1022,7 +981,6 @@ const s = {
   priorityBtnActive:{ background: '#fef3c7', borderColor: '#fcd34d', color: '#d97706' },
   removeBtn:        { width: '22px', height: '22px', borderRadius: '4px', border: '1px solid #fee2e2', background: '#fef2f2', cursor: 'pointer', fontSize: '10px', color: '#b91c1c', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 },
 
-  // Builder
   builderLayout:    { display: 'flex', flex: 1, gap: '12px', overflow: 'hidden' },
   mapPane:          { flex: 1, position: 'relative', borderRadius: '10px', overflow: 'hidden', border: '1px solid #e5e7eb' },
   mapLegend:        { position: 'absolute', bottom: '12px', left: '12px', zIndex: 1000, background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '5px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' },
@@ -1050,11 +1008,4 @@ const s = {
   modalFooter:      { display: 'flex', justifyContent: 'flex-end', gap: '8px', padding: '16px 24px', borderTop: '1px solid #f3f4f6' },
 
   toast:            { position: 'fixed', bottom: '24px', right: '24px', zIndex: 3000, padding: '12px 20px', borderRadius: '10px', border: '1px solid', fontSize: '13px', fontWeight: '600', boxShadow: '0 4px 16px rgba(0,0,0,0.12)' },
-  dupBtn: { padding: '4px 10px', fontSize: '12px', fontWeight: '600', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '5px', cursor: 'pointer', color: '#1d4ed8' },
-  delBtn: { padding: '4px 10px', fontSize: '12px', fontWeight: '600', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '5px', cursor: 'pointer', color: '#b91c1c' },
-  filterToggle:   { display: 'flex', border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden' },
-  filterBtn:      { padding: '7px 14px', fontSize: '12px', fontWeight: '600', border: 'none', background: '#fff', color: '#6b7280', cursor: 'pointer', borderRight: '1px solid #e5e7eb' },
-  filterBtnActive:{ background: '#f97316', color: '#fff' },
-
-
 }

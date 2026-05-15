@@ -10,8 +10,7 @@ const NAV = [
   {
     section: 'Outlets',
     items: [
-      { label: 'Outlet Map View',   icon: '🗺', href: '/outlets', key: 'map'     },
-      { label: 'Outlet Table View', icon: '☰', href: '/outlets', key: 'table'   },
+      { label: 'Outlets',   icon: '🗺', href: '/outlets', key: 'map'   },
     ],
   },
 
@@ -73,9 +72,9 @@ export default function Sidebar({ activePage }) {
 }
 
 const s = {
-  nav:          { width: '260px', flexShrink: 0, background: '#fff', borderRight: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column', padding: 0, overflowY: 'auto', height: '100vh' },
-  brand:        { display: 'flex', alignItems: 'center', gap: '12px', padding: '20px 20px 16px' },
-  logoMark:     { width: '36px', height: '36px', background: '#f97316', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '800', color: '#fff', flexShrink: 0 },
+  nav:          { width: '150px', flexShrink: 0, background: '#fff', borderRight: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column', padding: 0, overflowY: 'auto', height: '100vh' },
+  brand:        { display: 'flex', alignItems: 'center', gap: '8px', padding: '20px 20px 16px' },
+  logoMark:     { width: '36px', height: '36px', background: '#f97316', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '800', color: '#fff', flexShrink: 0 },
   brandName:    { fontSize: '15px', fontWeight: '700', color: '#111827', margin: 0 },
   brandSub:     { fontSize: '11px', color: '#9ca3af', margin: 0, marginTop: '1px' },
   divider:      { height: '1px', background: '#f3f4f6', margin: '4px 0' },
