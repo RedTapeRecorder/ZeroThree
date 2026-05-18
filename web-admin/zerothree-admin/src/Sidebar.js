@@ -1,5 +1,11 @@
 const NAV = [
   {
+  section: 'Overview',
+  items: [
+    { label: 'Dashboard', icon: '📊', href: '/dashboard', key: 'dashboard' },
+  ],
+  },
+  {
     section: 'Management',
     items: [
       { label: 'Riders',  icon: '👤', href: '/riders', key: 'riders' },

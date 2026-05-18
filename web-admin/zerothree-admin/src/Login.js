@@ -24,7 +24,7 @@ export default function Login() {
 
       localStorage.setItem('zt_token', res.data.token)
       localStorage.setItem('zt_manager', JSON.stringify(res.data.manager))
-      navigate('/outlets')
+      navigate('/dashboard')
     } catch (err) {
       if (err.response?.status === 401) {
         setError('Invalid email or password.')

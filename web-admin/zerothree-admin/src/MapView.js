@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { MapContainer, TileLayer, CircleMarker } from 'react-leaflet'
 import axios from 'axios'
 import Sidebar from './Sidebar'
+import PhotoUploadModal from './PhotoUploadModal'
 import 'leaflet/dist/leaflet.css'
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000'
@@ -9,6 +10,8 @@ const THUNDERFOREST_KEY = process.env.REACT_APP_THUNDERFOREST_KEY
 const SAN_JUAN = [14.6007, 121.0355]
 
 // ── Constants ────────────────────────────────
+
+
 const STATUS_COLOR = {
   ACTIVE:   '#22c55e',
   INACTIVE: '#9ca3af',
@@ -108,7 +111,9 @@ export default function MapView() {
 
   const token = localStorage.getItem('zt_token')
   const headers = { Authorization: `Bearer ${token}` }
-
+  
+  //Picture
+  const [uploadOutlet, setUploadOutlet] = useState(null)
   // ── Effects ──────────────────────────────
   useEffect(() => { fetchOutlets() }, [filters])
 
@@ -398,6 +403,15 @@ export default function MapView() {
                   )}
                 </div>
 
+                <div style={{ padding: '8px 16px', borderBottom: '1px solid #f3f4f6' }}>
+                  <button
+                    style={{ width: '100%', padding: '7px', fontSize: '12px', fontWeight: '600', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '7px', cursor: 'pointer', color: '#c2410c' }}
+                    onClick={() => setUploadOutlet(selected)}
+                  >
+                    📷 Upload new photo
+                  </button>
+                </div>
+
                 <div style={s.panelBody}>
                   <PRow label="Status"><Badge status={selected.outlet_status} /></PRow>
                   <PRow label="Owner">{selected.owner_name ?? '—'}</PRow>
@@ -503,6 +517,12 @@ export default function MapView() {
                               <button style={s.saveBtn} disabled={saving} onClick={() => saveEdit(outlet.id)}>{saving ? '…' : 'Save'}</button>
                               <button style={s.cancelBtn} onClick={() => setEditRow(null)}>Cancel</button>
                             </div>
+                            <button
+                              style={{ padding: '4px 10px', fontSize: '11px', fontWeight: '600', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '5px', cursor: 'pointer', color: '#c2410c', marginTop: '4px' }}
+                              onClick={() => setUploadOutlet(outlet)}
+                            >
+                              📷 Upload photo
+                            </button>
                             {saveError && <p style={s.inlineError}>{saveError}</p>}
                           </td>
                         </>
@@ -636,6 +656,21 @@ export default function MapView() {
             </div>
           </div>
         </div>
+      )}
+
+      {uploadOutlet && (
+        <PhotoUploadModal
+          outletId={uploadOutlet.id}
+          outletName={uploadOutlet.outlet_name}
+          onClose={() => setUploadOutlet(null)}
+          onSuccess={(url) => {
+            // If the uploaded outlet is the currently selected map pin, refresh the photo
+            if (selected?.id === uploadOutlet.id) {
+              setSelectedPhoto({ url })
+            }
+            setUploadOutlet(null)
+          }}
+        />
       )}
     </div>
   )
