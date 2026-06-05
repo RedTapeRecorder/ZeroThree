@@ -325,4 +325,133 @@ photos.patch('/admin/photos/:id/review', requireManager, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────
+// RIDERS PROFILE PHOTO MANAGEMENT (1-to-1)
+// ─────────────────────────────────────────────
+
+// ─────────────────────────────────────────────
+// POST /api/v1/admin/riders
+// Creation wrapper helper — Handles image processing during account onboarding
+// ─────────────────────────────────────────────
+photos.post('/admin/riders', requireManager, async (req, res) => {
+  const { 
+    full_name, 
+    phone_number, 
+    photo_base64, // Accept raw file base64 data URI
+    emergency_contact_name, 
+    emergency_contact_number, 
+    assigned_areas 
+  } = req.body;
+
+  if (!full_name || !phone_number) {
+    return res.status(400).json({ error: 'Full name and phone number are required.' });
+  }
+
+  try {
+    let cloudUrl = null;
+
+    // If an image was supplied via base64, process through Cloudinary immediately
+    if (photo_base64) {
+      const uploadResult = await cloudinary.uploader.upload(photo_base64, {
+        folder: 'zerothree/riders/profiles',
+        eager: [
+          {
+            quality: 'auto:good',
+            fetch_format: 'jpg',
+            width: 400, // Specialized dimensions optimized for layout badges
+            height: 400,
+            crop: 'fill', // Force clean uniform square dimensions for UI consistency
+            gravity: 'face' // Auto-detect face positions to center profile view
+          }
+        ],
+        eager_async: false
+      });
+      cloudUrl = uploadResult.eager?.[0]?.secure_url ?? uploadResult.secure_url;
+    }
+
+    // Insert direct metadata block into your Supabase table schema
+    const result = await pool.query(
+      `INSERT INTO riders 
+         (full_name, phone_number, photo_url, emergency_contact_name, 
+          emergency_contact_number, assigned_areas, status, setup_code)
+       VALUES ($1, $2, $3, $4, $5, $6, 'inactive', UPPER(SUBSTR(MD5(RANDOM()::TEXT), 1, 8)))
+       RETURNING id, full_name, photo_url, setup_code`,
+      [
+        full_name, 
+        phone_number, 
+        cloudUrl, 
+        emergency_contact_name ?? null, 
+        emergency_contact_number ?? null, 
+        assigned_areas ?? null
+      ]
+    );
+
+    return res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('[POST /admin/riders]', err.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─────────────────────────────────────────────
+// PATCH /api/v1/admin/riders/:id/photo
+// Directly rewrites / overwrites the profile photo url string value (1-to-1)
+// ─────────────────────────────────────────────
+photos.patch('/admin/riders/:id/photo', requireManager, async (req, res) => {
+  const riderId = parseInt(req.params.id, 10);
+
+  if (isNaN(riderId)) {
+    return res.status(400).json({ error: 'Invalid rider id' });
+  }
+
+  const { photo_base64 } = req.body;
+
+  if (!photo_base64) {
+    return res.status(400).json({ error: 'photo_base64 parameter payload is required' });
+  }
+
+  try {
+    // Confirm target account validity prior to executing cloud functions
+    const riderCheck = await pool.query('SELECT id FROM riders WHERE id = $1', [riderId]);
+    if (riderCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Rider record profile not found' });
+    }
+
+    // Upload directly using your global Cloudinary instance definitions
+    const uploadResult = await cloudinary.uploader.upload(photo_base64, {
+      folder: `zerothree/riders/profiles`,
+      eager: [
+        {
+          quality: 'auto:good',
+          fetch_format: 'jpg',
+          width: 400,
+          height: 400,
+          crop: 'fill',
+          gravity: 'face'
+        }
+      ],
+      eager_async: false,
+    });
+
+    const transformedUrl = uploadResult.eager?.[0]?.secure_url ?? uploadResult.secure_url;
+
+    // Execute direct text column replacement against your PostgreSQL instance
+    const updateResult = await pool.query(
+      `UPDATE riders 
+       SET photo_url = $1 
+       WHERE id = $2 
+       RETURNING id, full_name, photo_url`,
+      [transformedUrl, riderId]
+    );
+
+    return res.status(200).json({
+      message: 'Profile photo updated successfully',
+      rider: updateResult.rows[0]
+    });
+  } catch (err) {
+    console.error('[PATCH /admin/riders/:id/photo]', err.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 module.exports = photos;
