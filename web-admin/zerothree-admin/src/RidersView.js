@@ -78,7 +78,7 @@ export default function RidersView() {
     }
   }
 
-  // ── Handle file inputs and transform to base64 ──
+  // ── Handle file inputs and transform to downscaled base64 ──
   function handleFileChange(e, isEditMode = false) {
     const file = e.target.files[0]
     if (!file) return
@@ -90,11 +90,29 @@ export default function RidersView() {
     const reader = new FileReader()
     reader.readAsDataURL(file)
     reader.onloadend = () => {
-      if (isEditMode) {
-        // Trigger instant patch invocation when editing an existing profile
-        submitPhotoUpdate(selected.id, reader.result)
-      } else {
-        setPhotoBase64(reader.result)
+      const img = new Image()
+      img.src = reader.result
+      
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        const MAX_WIDTH = 400 // Perfect dimension footprint for profile thumbnails
+        const scaleSize = MAX_WIDTH / img.width
+        
+        canvas.width = MAX_WIDTH
+        canvas.height = img.height * scaleSize
+
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+
+        // Convert to jpeg and drop quality to 75% to drastically shrink data size
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.75)
+
+        if (isEditMode) {
+          // Trigger instant patch invocation with the optimized string
+          submitPhotoUpdate(selected.id, compressedBase64)
+        } else {
+          setPhotoBase64(compressedBase64)
+        }
       }
     }
   }
@@ -524,6 +542,5 @@ const s = {
   fileUploadBtn:   { padding: '8px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '6px', color: '#374151', fontSize: '13px', fontWeight: '600', cursor: 'pointer', transition: 'background 0.1s' },
   uploadPreviewThumb: { width: '38px', height: '38px', borderRadius: '50%', objectFit: 'cover', border: '1px solid #e5e7eb' },
   
-  // New layout configurations for the detailed profile editor button
   editPhotoBtn:    { padding: '8px 16px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', display: 'inline-block', marginRight: 'auto' }
 }
