@@ -1,0 +1,678 @@
+ZeroThree SRS v1.3  |  CONFIDENTIAL          LPG Delivery Route Management System
+ 
+**PROJECT ZEROTHREE**
+ 
+LPG Delivery Route Management System
+ 
+**Software Requirements Specification**
+ 
+Version 1.3  |  March 2026
+ 
+Author: [Your Name]
+ 
+Based on: ZeroThree BRD v2.1
+ 
+**CONFIDENTIAL — INTERNAL USE ONLY**
+ 
+# **1. Introduction**
+ 
+## **1.1 Purpose**
+ 
+This Software Requirements Specification (SRS) defines the complete, testable requirements for the LPG Delivery Route Management System, referred to throughout this document as ZeroThree. Every requirement stated here traces directly to a problem or goal documented in ZeroThree BRD v2.1.
+ 
+This document is the authoritative reference for development, testing, and acceptance of version 1 of the system. Any feature not listed in this document is out of scope for v1.
+ 
+## **1.2 Scope**
+ 
+ZeroThree consists of three components built and deployed together:
+ 
+- A rider mobile application for Android
+ 
+- A backend API server
+ 
+- A web-based administration panel for the branch manager
+ 
+The system serves an LPG distribution branch in San Juan City, Metro Manila, covering 7 areas and a network of approximately 550 recorded outlets, of which 50 to 100 are confirmed active.
+ 
+## **1.3 Definitions**
+ 
+| **Term** | **Definition** |
+| --- | --- |
+| Outlet | A sari-sari store or small retail business that purchases LPG canisters from the branch for resale |
+| Rider | A branch employee who travels by motorcycle to deliver and collect LPG canisters |
+| Visit | Any recorded interaction between a rider and an outlet, regardless of whether a delivery occurred |
+| Shift | A single working day for a rider, beginning at shift-start sync and ending at logout |
+| Geofence | A configurable virtual boundary around an outlet's GPS coordinates used to detect rider proximity |
+| Active outlet | An outlet currently being serviced, visible to riders on the map |
+| Inactive outlet | A known outlet not currently being serviced; hidden from riders but visible to the manager |
+| Pullout outlet | An outlet where the LPG product has been physically removed; hidden from riders, visible to manager |
+| FCM | Firebase Cloud Messaging — Google's free push notification delivery service |
+| Session key | A server-issued encryption key valid for one shift, used to encrypt outlet data on the rider's device |
+| Shift-start sync | The process of downloading encrypted outlet data, route, and map tiles to the rider's device at the start of a shift over WiFi |
+| Pin quality | A field recording how reliable the stored GPS coordinates are for a given outlet |
+| Verification level | A field recording who can confirm the accuracy of an outlet's location and current status |
+ 
+## **1.4 Source document**
+ 
+All requirements in this SRS derive from ZeroThree BRD v2.1, authored March 2026. The BRD section reference is noted beside each requirement. Priority codes: P = Primary rider goal, S = Supporting operational goal, G = Background growth principle.
+ 
+## **1.5 Requirement notation**
+ 
+**REQ-XXX: **The system shall [action].    [BRD §X.X] [Priority]
+ 
+Requirements use the word shall to indicate a mandatory condition. The word should indicates a strong preference that may be relaxed with documented justification. The word may indicates an optional behaviour.
+ 
+# **2. System Overview**
+ 
+ZeroThree is an offline-first field operations system. The rider mobile app is the primary surface — it must function without internet connectivity for all core delivery logging tasks. The backend API and web admin panel require internet connectivity to operate.
+ 
+The system is designed for a small operation of 1 to 3 riders and must not require structural changes to support up to 10 riders in the future. All outlet data transmitted to rider devices is encrypted with a server-issued session key and wiped automatically at shift end.
+ 
+# **3. User Requirements**
+ 
+## **3.1 Rider — mobile app**
+ 
+**REQ-001: **The system shall allow a rider to view all active outlets with reliable coordinates as pins on a map covering the full 7-area service zone from their first day of use.    [BRD §P1, §5.1] [P1]
+ 
+**REQ-002: **The system shall display the map and all active outlet pins without an internet connection, using data downloaded at shift-start sync.    [BRD §14.1, §15] [P1]
+ 
+*Rationale: Offline map capability is the single most critical feature for new rider onboarding in areas with poor signal.*
+ 
+**REQ-003: **The system shall show the rider which nearby active outlets have gone the longest without a visit, enabling experienced riders to prioritise unserviced accounts.    [BRD §P3] [P3]
+ 
+**REQ-004: **The system shall require a rider to complete a one-time setup using a manager-provided code before the app is usable.    [BRD §6.2] [S]
+ 
+**REQ-005: **The system shall store the rider's authentication token permanently on the device after the first login so that no subsequent login is required under normal circumstances.    [BRD §6.2, §5.1] [S]
+ 
+**REQ-006: **The system shall display a data collection disclosure screen on first login. The rider must tap an acknowledgement button before the app becomes usable.    [BRD §13, §14.1] [S]
+ 
+*Rationale: Required for RA 10173 compliance.*
+ 
+**REQ-007: **The system shall hide all inactive and pullout outlets completely from the rider's map view.    [BRD §7, §5.1] [S]
+ 
+**REQ-008: **The system shall allow a rider to tap any active outlet pin to open its detail screen before checking in.    [BRD §8] [P1]
+ 
+**REQ-009: **The detail screen shall always display: the outlet photo (or a placeholder if none exists), the outlet name and address, the date of the last visit, and the outcome of the last visit.    [BRD §8] [P1]
+ 
+**REQ-010: **The detail screen shall conditionally display the name of the rider who made the last visit, only if the manager has enabled the show_last_visitor flag for that outlet.    [BRD §8] [S]
+ 
+**REQ-011: **The detail screen shall conditionally display the exact time of the last visit, only if the manager has enabled the show_last_visit_time flag for that outlet.    [BRD §8] [S]
+ 
+**REQ-012: **The system shall fetch the outlet photo only when the rider opens that outlet's detail screen. Photos shall not be included in the shift-start sync payload.    [BRD §9] [S]
+ 
+*Rationale: Lazy loading is essential to the under-5MB-per-day data constraint.*
+ 
+## **3.2 Rider — visit logging**
+ 
+**REQ-013: **The system shall automatically detect when a rider enters the geofence radius of an active outlet using GPS polled at a configurable interval, defaulting to 10 seconds.    [BRD §11.1] [P1]
+ 
+**REQ-014: **When a rider remains within the geofence radius for more than 60 seconds, the system shall prompt the rider to log a visit outcome.    [BRD §11.1] [P1]
+ 
+**REQ-015: **When a rider passes through the geofence radius for fewer than 60 seconds, the system shall automatically record a no_stop outcome with no rider input required.    [BRD §10, §11.1] [P1]
+ 
+**REQ-016: **The system shall support the following visit outcome codes: delivered, no_stock, no_stop.    [BRD §10] [P1]
+ 
+**REQ-017: **For a delivered outcome, the system shall capture the following fields separately: number of canisters refilled (at ₱32 per unit), number of new canisters sold (at ₱70 per unit), and total payment collected as a single combined figure. Both unit fields shall accept zero, allowing a visit to record only refills, only new can sales, or both.    [BRD §10, §1] [P1]
+ 
+*Rationale: The branch conducts two transaction types. Refills account for approximately 70% of delivered visits — empty cans exchanged for full ones at ₱32. New can sales account for approximately 30% — a brand new canister sold at ₱70. Both may occur in the same visit and must be tracked separately to enable future outlet segmentation analytics.*
+ 
+**REQ-017a: **The system shall validate that at least one of the two unit fields — canisters refilled or new canisters sold — is greater than zero before a delivered outcome can be saved. A delivered visit recording zero units of both types is invalid and shall not be accepted.    [BRD §10] [P1]
+ 
+*Rationale: Enforced at both app level and database level as a check constraint. Prevents data entry errors where a rider selects delivered but forgets to enter units.*
+ 
+**REQ-018: **The system shall allow a rider to add an optional free-text note to any visit of any outcome.    [BRD §10] [P2]
+ 
+**REQ-019: **The system shall record arrival time when the rider enters the geofence radius.    [BRD §11.2] [S]
+ 
+**REQ-020: **The system shall record departure time when the rider exits the geofence radius.    [BRD §11.2] [S]
+ 
+**REQ-021: **The system shall automatically calculate and store visit duration in minutes from arrival and departure timestamps.    [BRD §11.2] [S]
+ 
+**REQ-022: **All visit timestamps shall be recorded in Philippine Standard Time (PST, UTC+8).    [BRD §11.2] [S]
+ 
+**REQ-023: **The system shall store the GPS accuracy reading in meters at the time of geofence entry with every visit record.    [BRD §11.1] [S]
+ 
+*Rationale: Provides audit evidence for disputed visits and helps identify outlets with problematic GPS conditions.*
+ 
+**REQ-024: **The system shall display a warning to the rider if their GPS position at check-in is outside the geofence radius, but shall allow them to proceed regardless.    [BRD §11.1] [S]
+ 
+**REQ-025: **The system shall queue visit records locally on the device when no internet connection is available and sync them to the server automatically when connectivity is restored.    [BRD §14.1, §15] [P1]
+ 
+## **3.3 Rider — photos**
+ 
+**REQ-026: **After completing any visit of any outcome, the system shall allow a rider to optionally submit a new photo of the outlet.    [BRD §9] [P2]
+ 
+**REQ-027: **A rider-submitted photo shall be held in a pending state on the server. The existing approved photo shall continue to be shown to all riders until the manager approves the submission.    [BRD §9] [S]
+ 
+**REQ-028: **The rider shall receive no in-app feedback when a photo submission is sent. The submission is silent from the rider's perspective.    [BRD §9] [S]
+ 
+## **3.4 Rider — routes**
+ 
+**REQ-029: **When a manager has assigned a route to a rider, the system shall display the route's outlets in the suggested sequence on the rider's map.    [BRD §12] [P3]
+ 
+**REQ-030: **The system shall visually distinguish high priority outlets within a route using a distinct marker on the map pin, different from standard outlet pins.    [BRD §12, §S7] [S]
+ 
+**REQ-031: **The rider shall be able to deviate from the suggested route sequence at any time without restriction.    [BRD §12] [P2]
+ 
+*Rationale: A rider carries approximately 4 × 33 canisters per load. With each outlet taking 5 to 10 or more canisters, a rider exhausts their supply after a small number of stops and must return to the branch to reload before continuing. The actual daily visit sequence is dictated by load cycles and reload availability, not a fixed plan. Route deviation is a physical necessity, not just a preference.*
+ 
+**REQ-032: **The active route shall be included in the shift-start sync payload and stored in encrypted temporary storage on the device, available offline.    [BRD §12, §15] [P1]
+ 
+## **3.5 Rider — data security**
+ 
+**REQ-033: **All outlet data stored on the rider's device shall be encrypted using a session key issued by the server at shift start.    [BRD §13, §14.1] [S]
+ 
+**REQ-034: **The session key shall be revoked by the server at logout or account lock, rendering any cached outlet data on the device unreadable.    [BRD §6.3, §13] [S]
+ 
+**REQ-035: **All outlet data shall be wiped from the rider's device at shift end or logout.    [BRD §13, §14.1] [S]
+ 
+**REQ-036: **The app shall check account status with the server on every reconnect after being offline. A locked account shall display a locked screen immediately upon reconnect.    [BRD §6.3, §14.1] [S]
+ 
+**REQ-037: **Outlet photos shall never be stored permanently on the rider's device.    [BRD §9] [S]
+ 
+# **4. Manager Requirements**
+ 
+## **4.1 Rider account management**
+ 
+**REQ-038: **The system shall allow the manager to create a new rider account from the web admin by entering: full name, phone number, photo or ID, emergency contact, assigned areas, and date hired.    [BRD §6.1] [S]
+ 
+**REQ-039: **The system shall generate a one-time setup code upon rider account creation for the rider to use on first app launch.    [BRD §6.2] [S]
+ 
+**REQ-040: **Riders shall not be able to self-register or modify their own account fields.    [BRD §6, §14.2] [S]
+ 
+**REQ-041: **The system shall display the following calculated statistics on each rider account: days active, total lifetime visits, date account was created, and timestamp of last server sync.    [BRD §6.1] [S]
+ 
+**REQ-042: **The system shall allow the manager to lock any rider account immediately from the web admin.    [BRD §6.3, §S5] [S]
+ 
+**REQ-043: **Upon account lock, the system shall immediately invalidate the rider's authentication token on the server. The lock shall take effect on the device the moment it next contacts the server.    [BRD §6.3] [S]
+ 
+**REQ-044: **The web admin shall clearly communicate that a lock takes effect at the rider's next server reconnect when the rider is offline, and is not guaranteed to be immediate in the field.    [BRD §6.3] [S]
+ 
+## **4.2 Outlet management**
+ 
+**REQ-045: **The manager shall have full visibility of all recorded outlets regardless of status through the web admin.    [BRD §5.2, §7] [S]
+ 
+**REQ-046: **The system shall allow the manager to add a new outlet by entering: name, address, GPS coordinates, and initial status.    [BRD §14.1] [S]
+ 
+**REQ-047: **The system shall allow the manager to edit any outlet's details including name, address, GPS coordinates, status, pin quality, and verification level.    [BRD §14.1] [S]
+ 
+**REQ-048: **The system shall allow the manager to change any outlet's status between active, inactive, and pullout.    [BRD §7] [S]
+ 
+**REQ-049: **The system shall allow the manager to configure the show_last_visitor flag per individual outlet independently of any other outlet.    [BRD §8] [S]
+ 
+**REQ-050: **The system shall allow the manager to configure the show_last_visit_time flag per individual outlet independently of any other outlet.    [BRD §8] [S]
+ 
+**REQ-051: **Both show_last_visitor and show_last_visit_time shall default to hidden for all outlets.    [BRD §8] [S]
+ 
+**REQ-052: **The system shall display a list of all active outlets that have not had a visit of any outcome recorded in 7 or more days.    [BRD §14.1, §S2] [S]
+ 
+## **4.3 Photo management**
+ 
+**REQ-053: **The manager shall be able to upload a photo for any outlet from the web admin. Manager-uploaded photos shall be approved immediately with no review step.    [BRD §9] [S]
+ 
+**REQ-054: **The web admin dashboard shall display a badge counter showing the number of rider-submitted photos awaiting review.    [BRD §9] [S]
+ 
+**REQ-055: **The manager shall be able to view a rider-submitted photo alongside the current approved photo before making an approval decision.    [BRD §9] [S]
+ 
+**REQ-056: **The system shall allow the manager to approve or reject any pending photo submission.    [BRD §9] [S]
+ 
+**REQ-057: **All photo submissions — approved and rejected — shall be retained in the database permanently for audit purposes.    [BRD §9] [S]
+ 
+**REQ-058: **Upon approval, the submitted photo shall become the new current photo for that outlet. The previously approved photo shall no longer be shown to riders.    [BRD §9] [S]
+ 
+## **4.4 Route management**
+ 
+**REQ-059: **The system shall allow the manager to create a suggested route at any time on an ad hoc basis with no fixed schedule required.    [BRD §12] [S6]
+ 
+**REQ-060: **A route shall contain up to 80 active outlets presented in a manager-defined suggested sequence.    [BRD §12, §S6] [S6]
+ 
+**REQ-061: **A route shall be assigned to one specific rider at creation time.    [BRD §12] [S6]
+ 
+**REQ-062: **The manager shall be able to flag any individual outlet within a route as high priority.    [BRD §12, §S7] [S7]
+ 
+**REQ-063: **When an outlet is flagged as high priority, the system shall deliver a push notification to the assigned rider's device via Firebase Cloud Messaging within 60 seconds.    [BRD §12, §S7] [S7]
+ 
+**REQ-064: **Push notifications for high priority outlets shall be held by FCM and delivered when the rider's device reconnects if the device is offline at the time of flagging.    [BRD §12, §15] [S7]
+ 
+**REQ-065: **The visual marker for high priority outlets shall be present on the rider's map as soon as the route syncs to the device, regardless of push notification delivery status.    [BRD §12] [S7]
+ 
+*Rationale: The visual marker is the reliable indicator. The push notification is supplementary.*
+ 
+## **4.5 Outlet data quality management**
+ 
+**REQ-104: **The system shall store a location_pin_quality field per outlet accepting exactly five values: precise, area, cluster, mismatch, missing. Any other value shall be rejected by the database.    [BRD §7a.1] [S]
+ 
+**REQ-105: **The system shall store a location_verification_level field per outlet accepting exactly four values: auditor, rider, staff, unverified. Any other value shall be rejected by the database.    [BRD §7a.2] [S]
+ 
+**REQ-106: **The manager shall be able to filter all outlets in the web admin by location_pin_quality and location_verification_level independently or in combination.    [BRD §S8] [S]
+ 
+**REQ-107: **The rider-facing shift-start sync payload shall only include active outlets where location_pin_quality is precise or area. Outlets with pin quality of cluster, mismatch, or missing shall never be transmitted to rider devices regardless of their outlet_status value.    [BRD §15, §7a.3] [S]
+ 
+*Rationale: Transmitting an unreliable coordinate to a rider is worse than transmitting nothing — it sends them to a location with no confidence the outlet is actually there. The system enforces coordinate quality as a prerequisite for rider visibility.*
+ 
+## **4.6 Dashboard and reporting**
+ 
+**REQ-066: **The web admin dashboard shall display all visit activity from the current day across all riders, including visit outcome, outlet name, arrival time, departure time, and duration.    [BRD §14.1, §S2, §S3] [S]
+ 
+**REQ-067: **The manager shall be able to view the full visit history for any outlet.    [BRD §8] [S]
+ 
+**REQ-068: **The manager shall be able to view the full visit history for any individual rider.    [BRD §6.1] [S]
+ 
+# **5. System Administrator Requirements**
+ 
+**REQ-069: **The system administrator shall be able to perform a one-time import of all recorded outlet records from the existing branch spreadsheet.    [BRD §14.1] [S]
+ 
+**REQ-070: **During import, the administrator shall be able to set the initial active, inactive, or pullout status of each outlet.    [BRD §5.3] [S]
+ 
+**REQ-071: **The system administrator shall create the initial manager account. All subsequent accounts shall be created by the manager.    [BRD §5.3] [S]
+ 
+**REQ-072: **The geofence radius shall be stored as a configurable parameter in the database, defaulting to 20 meters, adjustable without redeploying the app.    [BRD §11.1] [S]
+ 
+**REQ-073: **The GPS polling interval shall be stored as a configurable parameter in the database, defaulting to 10 seconds, adjustable without redeploying the app.    [BRD §11.1] [S]
+ 
+# **6. Non-Functional Requirements**
+ 
+## **6.1 Performance**
+ 
+**REQ-074: **The rider app shall display the map and all active outlet pins within 5 seconds of opening when operating from locally cached data.    [BRD §P1] [P1]
+ 
+**REQ-075: **The shift-start sync shall complete within 60 seconds over a typical branch WiFi connection.    [BRD §14.1] [S]
+ 
+**REQ-076: **The manager web admin dashboard shall load and display current-day visit activity within 5 seconds of opening.    [BRD §S2] [S]
+ 
+**REQ-077: **A push notification for a high priority outlet shall be delivered to an online rider device within 60 seconds of the manager flagging the outlet.    [BRD §S7] [S7]
+ 
+## **6.2 Data usage**
+ 
+**REQ-078: **Total mobile data consumption per rider per working day shall not exceed 5MB under normal operating conditions.    [BRD §15] [S]
+ 
+**REQ-079: **Offline map tiles for the full 7-area service zone shall be downloaded once over branch WiFi and shall not require re-download unless explicitly triggered.    [BRD §14.1] [P1]
+ 
+**REQ-080: **GPS polling shall consume no mobile data. The GPS chip shall operate passively from satellite signals.    [BRD §15] [S]
+ 
+**REQ-081: **A-GPS almanac data of approximately 10KB shall be downloaded once per day automatically during the shift-start WiFi sync.    [BRD §15] [S]
+ 
+**REQ-082: **Outlet photos shall be compressed to approximately 200KB on upload via Cloudinary. Full-resolution photos shall never be transmitted to rider devices.    [BRD §9, §15] [S]
+ 
+## **6.3 Offline capability**
+ 
+**REQ-083: **The following functions shall operate with full functionality when the rider device has no internet connection: viewing the outlet map, opening outlet detail screens, logging visits of all outcomes, adding notes to visits, and viewing the assigned route.    [BRD §15, §P1] [P1]
+ 
+**REQ-084: **Visit records created while offline shall be stored in the local encrypted cache and synced to the server automatically within 30 seconds of connectivity being restored.    [BRD §14.1] [P1]
+ 
+## **6.4 Security**
+ 
+**REQ-085: **All communication between the rider app and the backend API shall use HTTPS.    [BRD §15] [S]
+ 
+**REQ-086: **All outlet data stored on rider devices shall be encrypted using AES-256 or equivalent with a session key issued by the server.    [BRD §13] [S]
+ 
+**REQ-087: **The session key shall never be stored on the device. It shall be held in memory only and discarded at logout or shift end.    [BRD §13] [S]
+ 
+**REQ-088: **The system shall not store any outlet data permanently on any rider device.    [BRD §S4, §13] [S]
+ 
+## **6.5 Usability**
+ 
+**REQ-089: **A rider with no prior technical training shall be able to complete their first solo delivery shift using the app without any assistance, within one hour of first launch.    [BRD §P1, §5.1] [P1]
+ 
+**REQ-090: **The rider app shall not require riders to navigate more than 3 taps from the map view to log any visit outcome.    [BRD §P1] [P1]
+ 
+**REQ-091: **The manager shall be able to create a new rider account in under 2 minutes from the web admin.    [BRD §18] [S]
+ 
+**REQ-092: **The manager shall be able to create and assign a complete route of up to 80 outlets in under 5 minutes from the web admin.    [BRD §S6, §18] [S6]
+ 
+## **6.6 Reliability**
+ 
+**REQ-093: **The rider app shall not lose any visit record created during an offline session under any circumstance including app crash or phone restart.    [BRD §P1] [P1]
+ 
+*Rationale: Visit records are the primary business data. Loss is unacceptable.*
+ 
+**REQ-094: **The backend API shall be hosted on a platform providing a minimum uptime of 99% during branch operating hours.    [BRD §15] [S]
+ 
+## **6.7 Compatibility**
+ 
+**REQ-095: **The rider app shall be compatible with Android version 8.0 and above.    [BRD §15] [S]
+ 
+**REQ-096: **The rider app shall function on mid-range Android hardware with a minimum of 2GB RAM.    [BRD §5.1, §15] [S]
+ 
+**REQ-097: **The web admin panel shall function correctly in current versions of Chrome, Firefox, and Edge.    [BRD §5.2] [S]
+ 
+## **6.8 Data privacy**
+ 
+**REQ-098: **The system shall comply with Republic Act 10173 (Philippine Data Privacy Act) for all personal data collected from riders.    [BRD §13] [S]
+ 
+**REQ-099: **Rider visit activity data shall be accessible only to the branch manager and system administrator. It shall not be shared with any external party.    [BRD §13] [S]
+ 
+**REQ-100: **The time-tracking feature shall be implemented in a way that allows it to be disabled without requiring a rebuild or redeployment of the core application.    [BRD §17] [S]
+ 
+*Rationale: Provides a fallback if legal review requires the feature to be removed.*
+ 
+# **7. External Interface Requirements**
+ 
+## **7.1 Firebase Cloud Messaging (FCM)**
+ 
+The backend API shall integrate with Firebase Cloud Messaging to deliver push notifications to rider devices. Each rider account shall store an FCM device token updated automatically by the app on each launch.
+ 
+## **7.2 Cloudinary**
+ 
+All outlet photos shall be stored in Cloudinary. The system shall use Cloudinary's automatic image transformation to compress photos to approximately 200KB on upload. The database shall store the Cloudinary URL and Cloudinary public ID for each photo — the public ID is required for deletion when photos are rejected or replaced.
+ 
+## **7.3 Map tiles**
+ 
+Offline map tiles for the 7-area service zone shall be packaged in MBTiles format and downloaded to the rider device once over branch WiFi. The flutter_map library with MBTiles support shall be used for tile rendering. No live tile fetching shall occur during a shift.
+ 
+## **7.4 Navigation deep link**
+ 
+When a rider taps the navigate button on an outlet detail screen, the app shall open the device's installed navigation app (Google Maps or Waze) via a deep link pre-populated with the outlet's GPS coordinates. The system shall not implement its own turn-by-turn navigation.
+ 
+# **8. Constraints**
+ 
+| **Constraint** | **Detail** |
+| --- | --- |
+| Platform | Android only for v1. iOS is out of scope. |
+| Budget | All infrastructure must use free tiers. Railway or Render for API hosting, Cloudinary for photos, FCM for push notifications, Supabase for database hosting during development. |
+| Developer capacity | Single developer. Timeline is approximately 16 to 18 weeks across 5 build phases. |
+| Rider count | Designed for 1 to 3 riders. Architecture must support up to 10 without structural changes. |
+| Geofence radius | Configurable, defaulting to 20 meters. Subject to adjustment during field testing in Metro Manila. |
+| GPS polling | 10-second interval by default. Configurable. GPS consumes no mobile data. |
+| Rider-visible outlets | Only outlets with outlet_status = active AND location_pin_quality IN (precise, area) are included in the shift-start sync payload. |
+| Route update timing | Routes created or modified after shift-start sync reach the rider at next reconnect only. |
+| Account lock timing | Account locks take effect immediately when the device is online. When offline, the lock takes effect at next reconnect. |
+| Legal | RA 10173 compliance required. A qualified Philippine lawyer should review the time-tracking feature before deployment to real employees. |
+ 
+# **9. Assumptions**
+ 
+- The branch spreadsheet contains records for most known outlets including current status, outlet name, and address or barangay
+ 
+- Approximately one fifth of records currently have inaccurate or missing coordinates — these will be flagged with appropriate pin quality values during import
+ 
+- GPS coordinates will be geocoded from addresses and manually verified before go-live
+ 
+- Riders have Android phones with GPS, a functional rear camera, and the ability to receive push notifications
+ 
+- Branch WiFi is available for shift-start sync and map tile download
+ 
+- The manager has a computer with a modern web browser
+ 
+- The manager will upload initial photos for a representative sample of outlets before the first rider shift
+ 
+- The manager understands that route updates and account locks take effect at the rider's next server reconnect when the rider is offline
+ 
+- Riders will acknowledge the data collection disclosure before the app is used in a real deployment
+ 
+- Data quality will improve incrementally as riders and staff verify outlet locations in the field
+ 
+# **10. Future Compatibility Requirements**
+ 
+## **10.1 Order intake — background**
+ 
+Outlets currently contact the branch to place orders via phone calls, SMS, Viber, and WhatsApp. The manager receives these through multiple channels with no consistent recording system, then relays them verbally to riders by phone. There is no link between an inbound order request and a fulfilled delivery.
+ 
+Version 2 will introduce a formal order intake screen in the web admin where the manager logs inbound orders as structured records, assigns them to riders, and tracks fulfillment. The v1 database schema is designed to support this without structural changes.
+ 
+**REQ-101: **The visits table shall include a nullable order_id field (UUID type) from initial deployment. This field shall not be exposed in the v1 rider app or web admin interface but shall be present in the database schema to support order-to-fulfillment linking in v2 without a destructive schema migration.    [BRD §G5] [G]
+ 
+*Rationale: Having order_id as a nullable field from day one means linking visits to orders in v2 is a one-line application change. Without it, v2 requires an ALTER TABLE migration on a live production database containing months of visit records — a risky and avoidable operation.*
+ 
+**REQ-102: **The backend API shall be structured so that the following v2 endpoints can be added without modifying any existing v1 endpoint: POST /orders, GET /orders, GET /orders/pending, PATCH /orders/:id/assign, PATCH /orders/:id/cancel, GET /riders/:id/orders.    [BRD §G5] [G]
+ 
+*Rationale: These endpoints slot naturally into the existing API structure. Documenting them now ensures v1 API design decisions do not inadvertently block them.*
+ 
+**REQ-103: **The outlet records imported in v1 shall include all fields required by the v2 order intake system: outlet name, owner contact details, and GPS coordinates. No outlet record shall need to be restructured to support order intake.    [BRD §G5, §BRD §4] [G]
+ 
+## **10.2 v2 order data model — reference**
+ 
+The following table documents the planned v2 orders table structure. This is not built in v1 but is recorded here so that v1 schema decisions are made with full awareness of it.
+ 
+| **Field** | **Type** | **Description** |
+| --- | --- | --- |
+| id | UUID | Unique order record |
+| outlet_id | INTEGER FK | Links to the existing v1 outlets table |
+| requested_at | TIMESTAMP | When the outlet contacted the branch |
+| channel | ENUM | call, sms, viber, whatsapp |
+| units_refill_requested | INTEGER | Refill canisters requested at ₱32 per unit |
+| units_new_requested | INTEGER | New canisters requested at ₱70 per unit |
+| notes | TEXT | Manager notes from the call or message |
+| status | ENUM | pending, assigned, fulfilled, cancelled |
+| assigned_rider_id | INTEGER FK | Links to the existing v1 riders table |
+| fulfilled_visit_id | UUID FK | Links to the existing v1 visits table on fulfillment |
+| created_by | INTEGER FK | Manager account that logged the order |
+ 
+# **11. Requirements Traceability Matrix**
+ 
+Each requirement traces to its source in BRD v2.1 and is assigned a test type for the testing phase.
+ 
+| **Req. ID** | **Summary** | **BRD Source** | **Priority** | **Test Type** |
+| --- | --- | --- | --- | --- |
+| REQ-001 | Map shows active outlets with reliable coordinates on day one | §P1, §5.1 | P1 | Functional |
+| REQ-002 | Map works offline | §14.1 | P1 | Integration |
+| REQ-003 | Show unvisited outlets prioritised | §P3 | P3 | Functional |
+| REQ-004 | One-time setup code | §6.2 | S | Functional |
+| REQ-005 | Permanent auth token | §6.2 | S | Security |
+| REQ-006 | Data disclosure screen | §13 | S | Functional |
+| REQ-007 | Inactive and pullout outlets hidden from riders | §7 | S | Functional |
+| REQ-008 | Tap pin to open detail screen | §8 | P1 | Functional |
+| REQ-009 | Detail screen always-shown fields | §8 | P1 | Functional |
+| REQ-010 | Conditional: last visitor name | §8 | S | Functional |
+| REQ-011 | Conditional: last visit time | §8 | S | Functional |
+| REQ-012 | Lazy load photos | §9 | S | Performance |
+| REQ-013 | Auto geofence entry detection | §11.1 | P1 | Integration |
+| REQ-014 | 60-second visit prompt | §11.1 | P1 | Functional |
+| REQ-015 | Auto no_stop under 60 seconds | §10, §11.1 | P1 | Functional |
+| REQ-016 | Three visit outcome codes | §10 | P1 | Functional |
+| REQ-017 | Separate refill and new can unit capture | §10, §1 | P1 | Functional |
+| REQ-017a | Validate at least one unit type > zero | §10 | P1 | Functional |
+| REQ-018 | Optional visit note | §10 | P2 | Functional |
+| REQ-019 | Record arrival time | §11.2 | S | Functional |
+| REQ-020 | Record departure time | §11.2 | S | Functional |
+| REQ-021 | Calculate duration | §11.2 | S | Functional |
+| REQ-022 | PST timestamps | §11.2 | S | Functional |
+| REQ-023 | Store GPS accuracy per visit | §11.1 | S | Functional |
+| REQ-024 | Geofence warning — rider may proceed | §11.1 | S | Functional |
+| REQ-025 | Offline visit queue and sync | §14.1 | P1 | Integration |
+| REQ-026 | Rider photo submission | §9 | P2 | Functional |
+| REQ-027 | Pending photo — old photo stays live | §9 | S | Functional |
+| REQ-028 | Silent submission from rider view | §9 | S | Functional |
+| REQ-029 | Route displayed on rider map | §12 | P3 | Functional |
+| REQ-030 | High priority outlet visual marker | §12 | S7 | Functional |
+| REQ-031 | Rider may deviate from route | §12 | P2 | Functional |
+| REQ-032 | Route in offline shift-start sync | §12 | P1 | Integration |
+| REQ-033 | Outlet data encrypted on device | §13 | S | Security |
+| REQ-034 | Session key revoked on lock or logout | §6.3, §13 | S | Security |
+| REQ-035 | Outlet data wiped at shift end | §13 | S | Security |
+| REQ-036 | Account status check on reconnect | §6.3 | S | Security |
+| REQ-037 | Photos not stored on device | §9 | S | Security |
+| REQ-038 | Manager creates rider account | §6.1 | S | Functional |
+| REQ-039 | One-time setup code generation | §6.2 | S | Functional |
+| REQ-040 | No rider self-registration | §6 | S | Security |
+| REQ-041 | Calculated rider statistics | §6.1 | S | Functional |
+| REQ-042 | Manager locks rider account | §6.3 | S | Functional |
+| REQ-043 | Immediate token invalidation on lock | §6.3 | S | Security |
+| REQ-044 | Manager warned of offline lock delay | §6.3 | S | Usability |
+| REQ-045 | Manager sees all recorded outlets | §5.2, §7 | S | Functional |
+| REQ-046 | Manager adds outlet | §14.1 | S | Functional |
+| REQ-047 | Manager edits outlet including quality fields | §14.1 | S | Functional |
+| REQ-048 | Manager changes outlet status (active, inactive, pullout) | §7 | S | Functional |
+| REQ-049 | Per-outlet show_last_visitor flag | §8 | S | Functional |
+| REQ-050 | Per-outlet show_last_visit_time flag | §8 | S | Functional |
+| REQ-051 | Visibility flags default to hidden | §8 | S | Functional |
+| REQ-052 | List of outlets not visited in 7+ days | §14.1 | S | Functional |
+| REQ-053 | Manager uploads outlet photo | §9 | S | Functional |
+| REQ-054 | Pending photo badge counter | §9 | S | Functional |
+| REQ-055 | Side-by-side photo review | §9 | S | Functional |
+| REQ-056 | Approve or reject submission | §9 | S | Functional |
+| REQ-057 | Retain all photo submissions for audit | §9 | S | Functional |
+| REQ-058 | Approved photo becomes current | §9 | S | Functional |
+| REQ-059 | Ad hoc route creation | §12 | S6 | Functional |
+| REQ-060 | Route max 80 outlets | §12 | S6 | Functional |
+| REQ-061 | Route assigned to specific rider | §12 | S6 | Functional |
+| REQ-062 | Flag outlet as high priority | §12 | S7 | Functional |
+| REQ-063 | Push notification within 60 seconds | §12, §S7 | S7 | Integration |
+| REQ-064 | FCM holds notification when offline | §12 | S7 | Integration |
+| REQ-065 | Visual marker independent of notification | §12 | S7 | Functional |
+| REQ-066 | Dashboard: today's visit activity | §14.1 | S | Functional |
+| REQ-067 | Manager views outlet visit history | §8 | S | Functional |
+| REQ-068 | Manager views rider visit history | §6.1 | S | Functional |
+| REQ-069 | One-time outlet import from spreadsheet | §14.1 | S | Functional |
+| REQ-070 | Set initial outlet status during import (active, inactive, pullout) | §5.3 | S | Functional |
+| REQ-071 | Admin creates initial manager account | §5.3 | S | Functional |
+| REQ-072 | Configurable geofence radius | §11.1 | S | Functional |
+| REQ-073 | Configurable GPS poll interval | §11.1 | S | Functional |
+| REQ-074 | Map loads within 5 seconds offline | §P1 | P1 | Performance |
+| REQ-075 | Shift-start sync within 60 seconds | §14.1 | S | Performance |
+| REQ-076 | Dashboard loads within 5 seconds | §S2 | S | Performance |
+| REQ-077 | Push notification within 60 seconds | §S7 | S7 | Performance |
+| REQ-078 | Under 5MB data per rider per day | §15 | S | Performance |
+| REQ-079 | Map tiles downloaded once over WiFi | §14.1 | P1 | Functional |
+| REQ-080 | GPS polling uses no mobile data | §15 | S | Functional |
+| REQ-081 | A-GPS almanac 10KB once per day | §15 | S | Functional |
+| REQ-082 | Photos compressed to 200KB | §9, §15 | S | Functional |
+| REQ-083 | Core functions work fully offline | §15, §P1 | P1 | Integration |
+| REQ-084 | Offline visits sync within 30 seconds | §14.1 | P1 | Integration |
+| REQ-085 | HTTPS for all API communication | §15 | S | Security |
+| REQ-086 | AES-256 encryption on device | §13 | S | Security |
+| REQ-087 | Session key in memory only | §13 | S | Security |
+| REQ-088 | No outlet data stored permanently | §S4 | S | Security |
+| REQ-089 | Learnable in under one hour | §P1, §5.1 | P1 | Usability |
+| REQ-090 | Max 3 taps to log any outcome | §P1 | P1 | Usability |
+| REQ-091 | Create rider account in under 2 minutes | §18 | S | Usability |
+| REQ-092 | Create route in under 5 minutes | §S6, §18 | S6 | Usability |
+| REQ-093 | No visit record loss on crash or restart | §P1 | P1 | Reliability |
+| REQ-094 | 99% API uptime during operating hours | §15 | S | Reliability |
+| REQ-095 | Android 8.0 and above | §15 | S | Compatibility |
+| REQ-096 | Functions on 2GB RAM Android device | §5.1 | S | Compatibility |
+| REQ-097 | Web admin works in Chrome, Firefox, Edge | §5.2 | S | Compatibility |
+| REQ-098 | RA 10173 compliance | §13 | S | Legal |
+| REQ-099 | Visit data not shared externally | §13 | S | Security |
+| REQ-100 | Time tracking disableable without rebuild | §17 | S | Functional |
+| REQ-101 | Nullable order_id in visits table | §G5 | G | Functional |
+| REQ-102 | v2 order API endpoints accommodated | §G5 | G | Functional |
+| REQ-103 | Outlet records support order intake | §G5, §4 | G | Functional |
+| REQ-104 | location_pin_quality field — five constrained values | §7a.1 | S | Functional |
+| REQ-105 | location_verification_level field — four constrained values | §7a.2 | S | Functional |
+| REQ-106 | Manager filters outlets by pin quality and verification level | §S8 | S | Functional |
+| REQ-107 | Shift-start sync excludes cluster, mismatch, missing pin quality outlets | §15, §7a.3 | S | Integration |
+ 
+# **12. Out of Scope for Version 1**
+ 
+The following are explicitly excluded from v1 and must not be implemented without a formal scope change approved in writing:
+ 
+- Rider self-registration or account modification
+ 
+- Continuous GPS tracking between outlets
+ 
+- Automated performance scoring or penalties based on visit data
+ 
+- Riders having any ability to change outlet status
+ 
+- Automated reactivation of inactive or pullout outlets
+ 
+- Turn-by-turn in-app navigation
+ 
+- Automatic route optimization (deferred to v2)
+ 
+- iOS version of the rider app
+ 
+- Customer-facing features — outlets do not have a login
+ 
+- Payment processing or invoicing
+ 
+- Integration with accounting or inventory systems
+ 
+- Analytics on route deviation patterns (deferred to v2)
+ 
+- Inbound order intake system (deferred to v2)
+ 
+# **13. Acceptance Criteria**
+ 
+Version 1 is accepted when all of the following scenarios can be demonstrated in a field test environment:
+ 
+### **Scenario A — New rider first day**
+ 
+- A tester with no prior knowledge of the route launches the app for the first time
+ 
+- Completes one-time setup using a manager-provided code
+ 
+- Acknowledges the data collection disclosure
+ 
+- Sees active outlet pins on a map of the service area — only outlets with precise or area pin quality are visible
+ 
+- Taps an outlet to view its photo and last visit information
+ 
+- Navigates to the outlet using an external map app via deep link
+ 
+- The geofence triggers automatically upon arrival
+ 
+- Logs a delivered outcome with units and payment
+ 
+- The visit appears in the manager web dashboard within 30 seconds
+ 
+- Entire scenario completed without asking anyone for directions
+ 
+### **Scenario B — Offline operation**
+ 
+- Rider device is placed in airplane mode after shift-start sync
+ 
+- Rider navigates the map, taps outlets, views detail screens
+ 
+- Rider logs 5 visits of mixed outcomes including delivered and no_stock
+ 
+- Device is reconnected to internet
+ 
+- All 5 visits appear in the manager web dashboard within 30 seconds of reconnect
+ 
+- No visit record is lost
+ 
+### **Scenario C — Account lock**
+ 
+- Manager locks a rider account from the web admin while the rider's app is open
+ 
+- If the device is online: the locked screen appears within 10 seconds
+ 
+- If the device is offline: the locked screen appears the moment it reconnects
+ 
+- After lock: no outlet data remains accessible on the device
+ 
+### **Scenario D — High priority route**
+ 
+- Manager creates a route of at least 10 outlets and assigns it to a rider
+ 
+- Manager flags 2 outlets as high priority
+ 
+- Rider receives a push notification within 60 seconds on an online device
+ 
+- Rider opens the map and sees the 2 flagged outlets with a distinct visual marker
+ 
+- Marker is visible even when notifications are disabled on the device
+ 
+### **Scenario E — Data usage**
+ 
+- A full simulated shift is completed: shift-start sync, 20 outlet visits, 10 photo views
+ 
+- Total mobile data consumed is measured and confirmed to be under 5MB
+ 
+### **Scenario F — Manager operations**
+ 
+- Manager creates a new rider account in under 2 minutes
+ 
+- Manager creates and assigns a route of 80 outlets in under 5 minutes
+ 
+- Manager identifies all active outlets not visited in 7 or more days in under 30 seconds
+ 
+- Manager approves a pending rider-submitted photo
+ 
+- Manager filters outlets by location_pin_quality = missing to view the geocoding work queue
+ 
+- Manager changes an outlet status from active to pullout — outlet disappears from rider map immediately at next sync
+ 
+# **14. Document Control**
+ 
+| **Version** | **Date** | **Author** | **Changes** |
+| --- | --- | --- | --- |
+| 1.0 | March 2026 | [Your Name] | Initial release. Derived from ZeroThree BRD v1.8. |
+| 1.1 | March 2026 | [Your Name] | REQ-017 updated: delivery logging captures refill units and new can sales separately. REQ-017a added: validation that at least one unit type is greater than zero. REQ-031 rationale corrected: route deviation driven by physical load capacity constraint. |
+| 1.2 | March 2026 | [Your Name] | Section 10 added: Future Compatibility Requirements. REQ-101 through REQ-103 added. Section numbering updated throughout. |
+| 1.3 | March 2026 | [Your Name] | Three changes from field data review: (1) closed status renamed to pullout throughout — REQ-007 and REQ-048 updated; pullout added to definitions; (2) REQ-104 through REQ-107 added covering location_pin_quality, location_verification_level, manager filter, and shift-start sync exclusion rule for low-confidence coordinates; (3) outlet count updated to reflect actual recorded data. Source document updated to BRD v2.1. |
+ 
+**Note: ***This document should be reviewed and updated whenever a decision changes a testable behaviour of the system. All changes should be versioned and the previous version retained for reference.*
+ 
+Page  of           March 2026  |  Based on ZeroThree BRD v2.1

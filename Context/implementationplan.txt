@@ -1,0 +1,656 @@
+ZeroThree Implementation Plan v1.1  |  CONFIDENTIAL          LPG Delivery Route Management System
+ 
+**PROJECT ZEROTHREE**
+ 
+LPG Delivery Route Management System
+ 
+**Implementation Plan**
+ 
+Version 1.1  |  March 2026
+ 
+Author: Vincent Salvador
+ 
+Based on: ZeroThree BRD v2.1  |  ZeroThree SRS v1.3
+ 
+**CONFIDENTIAL — INTERNAL USE ONLY**
+ 
+# **1. Purpose of This Document**
+ 
+This Implementation Plan translates the requirements documented in ZeroThree BRD v2.1 and SRS v1.3 into a concrete, sequenced build schedule. It defines five phases of development, the specific tasks within each phase, the technologies to be learned and applied, the acceptance criteria that mark each phase complete, and the overall timeline across one semester of approximately 16 to 18 weeks.
+ 
+This document is the working reference for the developer during the build. It is not a fixed contract — decisions made during development may require updates to this plan. All significant deviations should be recorded in the Development Diary with a date and rationale.
+ 
+**Important: **Any feature not listed in the SRS v1.3 scope section is out of scope for v1 and must not be built without a formal decision recorded in the Development Diary.
+ 
+# **2. System Summary**
+ 
+ZeroThree is a three-component field operations system for a San Juan City LPG distribution branch. The three components are built and deployed together but developed in sequence.
+ 
+| **Component** | **Technology** | **Primary purpose** |
+| --- | --- | --- |
+| PostgreSQL + PostGIS | Node.js + Express | Flutter (Android) |
+| Database | Backend API | Rider mobile app |
+| Hosted on Supabase. Stores all outlet, rider, visit, and route data with full spatial query support. PostGIS pre-installed. | Connects all components. Handles authentication, geofence logic, sync, push notifications | Primary rider-facing surface. Offline-first. GPS polling, map display, visit logging |
+ 
+| **Component** | **Technology** | **Primary purpose** |
+| --- | --- | --- |
+| React + Leaflet.js | Cloudinary | Firebase Cloud Messaging |
+| Web admin panel | Photo storage | Push notifications |
+| Manager-facing browser interface. Outlet management, rider accounts, dashboard, route creation | Free-tier image hosting. Auto-compresses outlet photos to ~200KB on upload | Free Google service delivering push notifications to rider Android devices |
+ 
+**Note: ***Supabase is used as the primary database host throughout all phases including production. It provides PostgreSQL with PostGIS pre-installed, a web-based SQL editor, and a connection string compatible with standard PostgreSQL clients including the Node.js pg library. The Supabase JavaScript client (supabase-js) is not used — all database access goes through the Node.js backend using raw SQL via the pg library. This avoids vendor lock-in at the application layer.*
+ 
+# **3. Learning Prerequisites**
+ 
+The developer has foundational programming knowledge in at least one language (Python, C, or Java). The following gaps must be closed before or during each phase. These are sequenced so each phase's learning feeds directly into its build tasks.
+ 
+| **Phase** | **Topic to learn** | **Why it is needed** | **Recommended resource** |
+| --- | --- | --- | --- |
+| Pre-build | SQL fundamentals | All data lives in PostgreSQL on Supabase. Every phase touches the database. | PostgreSQL official tutorial + freeCodeCamp SQL course |
+| Pre-build | How HTTP works — requests, responses, status codes, JSON | The API is built on HTTP. Understanding it makes every subsequent phase clearer. | MDN Web Docs: HTTP overview |
+| Pre-build | Git version control — commit, branch, push | All code must be version controlled from day one. | Pro Git book (free at git-scm.com) |
+| Phase 1 | PostGIS spatial queries — ST_Point, ST_DWithin, ST_Distance | Required for the nearby outlets query that powers the rider app. Practice in the Supabase SQL editor. | PostGIS official workshop (free online) |
+| Phase 2 | JavaScript fundamentals — async/await, promises, arrow functions | Node.js uses JavaScript. Async is the most foreign concept for Python/C developers. | javascript.info — free, comprehensive |
+| Phase 2 | REST API design — endpoints, methods, request/response structure | Needed to build and test the API correctly. | Postman Learning Center (free) |
+| Phase 3 | HTML, CSS, JavaScript basics — DOM manipulation, fetch API | Required for the web admin panel. | The Odin Project — free, project-first curriculum |
+| Phase 3 | React fundamentals — components, state, useEffect, props | The web admin is built in React. | React official docs tutorial (react.dev) |
+| Phase 4 | Dart language basics — syntax, types, null safety | Flutter apps are written in Dart. | Dart official tour (dart.dev) |
+| Phase 4 | Flutter fundamentals — widgets, state management, navigation | The rider app is built in Flutter. | Flutter official codelabs (flutter.dev) |
+| Phase 4 | Flutter offline and GPS — geolocator, flutter_secure_storage, SQLite | Core technical requirements of the rider app. | Flutter package documentation on pub.dev |
+ 
+# **4. Phase Overview**
+ 
+The five phases are sequenced so that each phase produces a testable artifact that the next phase builds on. No phase should begin until its predecessor's acceptance criteria are met.
+ 
+| **Phase** | **Name** | **Duration** | **What it produces** |
+| --- | --- | --- | --- |
+| Phase 0 | Foundations and setup | 1–2 weeks | Development environment, Git repository, Supabase project live with test data |
+| Phase 1 | Database | 2 weeks | Full schema on Supabase. Outlet data imported and quality-flagged. Nearby query working. |
+| Phase 2 | Backend API | 3 weeks | All core API endpoints working and tested via Postman. Authentication, outlet fetch, visit logging, route management. |
+| Phase 3 | Web admin panel | 3 weeks | Manager can log in, view all outlets on a map, add/edit outlets, manage rider accounts, view today's visit activity. |
+| Phase 4 | Rider mobile app | 4–6 weeks | Flutter app on Android device. Map with outlet pins, geofence detection, visit logging, offline capability, photo submission. |
+| Phase 5 | Integration and deployment | 2 weeks | All three components connected and tested end to end. Acceptance scenarios from SRS §13 demonstrated successfully. |
+ 
+# **5. Phase 0 — Foundations and Setup**
+ 
+Phase 0 establishes the development environment and ensures all tools are installed and working before any real code is written. This phase is often underestimated. A poorly configured environment causes compounding problems across every subsequent phase.
+ 
+## **5.1 Tasks**
+ 
+| **#** | **Task** | **Done when** |
+| --- | --- | --- |
+| 0.1 | Install Node.js LTS, Git, VS Code, and Postman on development machine | All four open without errors |
+| 0.2 | Create a GitHub repository named zerothree. Commit an empty README.md as the first commit. | Repository visible at github.com with at least one commit |
+| 0.3 | Create a free Supabase account at supabase.com. Create a new project. Choose a region closest to the Philippines (Singapore). Note the project URL and anon key from Project Settings → API. | Supabase project dashboard is accessible. Can reach the SQL editor without errors. |
+| 0.4 | Verify PostGIS is available on the Supabase project. In the Supabase SQL editor run: SELECT PostGIS_Version(); | Query returns a PostGIS version number without error. No installation required — PostGIS is pre-installed on all Supabase projects. |
+| 0.5 | Obtain the database connection string from Supabase. Go to Project Settings → Database → Connection string → URI. Copy the connection string — it begins with postgresql:// | Connection string noted securely. Do not commit this to GitHub. |
+| 0.6 | Create a free Cloudinary account. Note the cloud name, API key, and API secret. | Can upload a test image via the Cloudinary web interface |
+| 0.7 | Create a Firebase project. Enable Cloud Messaging. Download the google-services.json file. | Firebase console shows the project active |
+| 0.8 | Install Flutter SDK and Android Studio. Connect an Android device or configure an emulator. | flutter doctor returns no critical errors |
+| 0.9 | Set up the project folder structure with three subdirectories: /backend, /web-admin, /mobile-app. | Folder structure committed to GitHub |
+| 0.10 | Create a .env file template in /backend with placeholder variables: DATABASE_URL (paste Supabase connection string here), CLOUDINARY_URL, FCM_SERVER_KEY, JWT_SECRET. | Template committed to GitHub. Actual .env file added to .gitignore. Connection string never committed to version control. |
+ 
+## **5.2 Phase 0 acceptance criteria**
+ 
+- Development machine runs Node.js, Git, VS Code, and Postman without errors
+ 
+- GitHub repository exists with folder structure committed
+ 
+- Supabase project is live and the SQL editor returns SELECT PostGIS_Version() without error
+ 
+- Cloudinary account active
+ 
+- Firebase project active with google-services.json downloaded
+ 
+- Flutter doctor reports no critical errors
+ 
+- An Android device or emulator can run a blank Flutter app
+ 
+- DATABASE_URL from Supabase is stored in .env and the file is git-ignored
+ 
+# **6. Phase 1 — Database**
+ 
+Phase 1 designs and populates the full database schema on Supabase. Every other component depends on this schema being correct. Changes to the schema after Phase 2 begins become progressively more expensive. Get this right before writing any API or app code.
+ 
+**Important: **Do not begin Phase 2 until the nearby outlets query returns correct results from real outlet data. A schema error discovered in Phase 4 is ten times more expensive to fix than one discovered in Phase 1.
+ 
+**Note: ***All SQL in this phase is run in the Supabase SQL editor. There is no need to install PostgreSQL locally — Supabase provides the database and a browser-based query interface.*
+ 
+## **6.1 Database schema**
+ 
+The following tables must be created in this order. Foreign key constraints require parent tables to exist before child tables. Run each CREATE TABLE block separately in the Supabase SQL editor and confirm it succeeds before moving to the next.
+ 
+### **6.1.1 system_config**
+ 
+Stores configurable system parameters. Allows geofence radius and GPS poll interval to be changed without redeploying the app, as required by REQ-072 and REQ-073.
+ 
+| **Column** | **Type** | **Constraints** | **Description** |
+| --- | --- | --- | --- |
+| key | VARCHAR(100) | PRIMARY KEY | Parameter name e.g. geofence_radius_meters |
+| value | TEXT | NOT NULL | Parameter value stored as text, cast in application |
+| updated_at | TIMESTAMP | DEFAULT NOW() | Last time this parameter was changed |
+ 
+Seed with: INSERT INTO system_config VALUES ('geofence_radius_meters', '20', NOW()), ('gps_poll_interval_seconds', '10', NOW());
+ 
+### **6.1.2 managers**
+ 
+| **Column** | **Type** | **Constraints** | **Description** |
+| --- | --- | --- | --- |
+| id | SERIAL | PRIMARY KEY | Auto-incrementing manager ID |
+| email | TEXT | UNIQUE NOT NULL | Login email address |
+| password_hash | TEXT | NOT NULL | bcrypt hash — never store plaintext passwords |
+| name | TEXT | NOT NULL | Display name |
+| created_at | TIMESTAMP | DEFAULT NOW() | Account creation timestamp |
+ 
+### **6.1.3 outlets**
+ 
+Core outlet table. The location column uses PostGIS GEOGRAPHY type for accurate distance calculations on a spherical Earth. Two data quality fields are included per REQ-104 and REQ-105 with check constraints enforcing valid vocabularies.
+ 
+| **Column** | **Type** | **Constraints** | **Description** |
+| --- | --- | --- | --- |
+| id | SERIAL | PRIMARY KEY | Auto-incrementing outlet ID |
+| outlet_name | TEXT | NOT NULL | Store name e.g. Aling Rosa Store |
+| outlet_formaladdress | TEXT |  | Full formatted address |
+| outlet_city | TEXT |  | City e.g. San Juan City |
+| outlet_district | TEXT |  | District within the city |
+| outlet_barangay | TEXT |  | Barangay name |
+| outlet_area | TEXT |  | Area code or zone label |
+| owner_name | TEXT |  | Owner name for rider reference |
+| owner_contact | TEXT |  | Owner phone number — required for v2 order intake |
+| location | GEOGRAPHY(POINT,4326) | NULLABLE | GPS coordinates. Nullable — not all outlets have verified coordinates yet |
+| outlet_status | TEXT | DEFAULT 'inactive' CHECK (outlet_status IN ('active','inactive','pullout')) | active, inactive, or pullout |
+| location_pin_quality | TEXT | DEFAULT 'missing' CHECK (location_pin_quality IN ('precise','area','cluster','mismatch','missing')) | Coordinate reliability — see BRD §7a.1 |
+| location_verification_level | TEXT | DEFAULT 'unverified' CHECK (location_verification_level IN ('auditor','rider','staff','unverified')) | Who can confirm this outlet — see BRD §7a.2 |
+| show_last_visitor | BOOLEAN | DEFAULT FALSE | Controls REQ-010 visibility per outlet |
+| show_last_visit_time | BOOLEAN | DEFAULT FALSE | Controls REQ-011 visibility per outlet |
+| outlet_concerningbranch | TEXT |  | Which branch services this outlet |
+| outlet_last_visit_time | TIMESTAMP | NULLABLE | Denormalized last visit time for fast lookups |
+| created_at | TIMESTAMP | DEFAULT NOW() | When record was added |
+| updated_at | TIMESTAMP | DEFAULT NOW() | Last update — use a trigger to auto-update |
+ 
+**Note: ***Create a spatial index after import: CREATE INDEX outlets_location_idx ON outlets USING GIST(location); — this makes nearby queries fast. The index handles NULL values gracefully and does not need to be rebuilt when coordinates are added to previously null records.*
+ 
+### **6.1.4 outlet_photos**
+ 
+| **Column** | **Type** | **Constraints** | **Description** |
+| --- | --- | --- | --- |
+| id | UUID | PRIMARY KEY DEFAULT gen_random_uuid() | Unique photo record |
+| outlet_id | INTEGER | REFERENCES outlets(id) | Which outlet this photo belongs to |
+| submitted_by_rider_id | INTEGER | REFERENCES riders(id) NULLABLE | NULL if uploaded by manager |
+| cloudinary_url | TEXT | NOT NULL | Full Cloudinary URL to the compressed image |
+| cloudinary_id | TEXT | NOT NULL | Cloudinary public_id — required for deletion |
+| submission_source | TEXT | NOT NULL CHECK (submission_source IN ('manager','rider')) | Who uploaded this photo |
+| status | TEXT | DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')) | Review status |
+| is_current | BOOLEAN | DEFAULT FALSE | Only one photo per outlet has TRUE at any time |
+| submitted_at | TIMESTAMP | DEFAULT NOW() | When photo was uploaded |
+| reviewed_at | TIMESTAMP | NULLABLE | When manager approved or rejected |
+| reviewed_by | TEXT | NULLABLE | Manager who reviewed |
+| rejection_reason | TEXT | NULLABLE | Optional reason if rejected |
+ 
+### **6.1.5 riders**
+ 
+| **Column** | **Type** | **Constraints** | **Description** |
+| --- | --- | --- | --- |
+| id | SERIAL | PRIMARY KEY | Auto-incrementing rider ID |
+| full_name | TEXT | NOT NULL | Rider's legal name |
+| phone_number | TEXT | NOT NULL | Primary contact number |
+| photo_url | TEXT |  | Cloudinary URL for profile photo or ID image |
+| emergency_contact_name | TEXT |  | Emergency contact name |
+| emergency_contact_number | TEXT |  | Emergency contact number |
+| assigned_areas | TEXT |  | Comma-separated barangay or zone names |
+| date_hired | DATE |  | When the rider joined the branch |
+| status | TEXT | DEFAULT 'active' CHECK (status IN ('active','locked')) | active or locked |
+| setup_code | TEXT | NULLABLE | One-time setup code. Cleared after first login. |
+| auth_token_hash | TEXT | NULLABLE | Hash of the stored auth token. Null = locked. |
+| fcm_token | TEXT | NULLABLE | Firebase device token for push notifications |
+| created_at | TIMESTAMP | DEFAULT NOW() | Account creation timestamp |
+| last_active_at | TIMESTAMP | NULLABLE | Timestamp of last server sync |
+ 
+### **6.1.6 visits**
+ 
+The most important table in the system. Every outlet interaction by every rider is a row here. The nullable order_id field is included from day one per REQ-101 to support v2 order intake without a schema migration.
+ 
+| **Column** | **Type** | **Constraints** | **Description** |
+| --- | --- | --- | --- |
+| id | UUID | PRIMARY KEY DEFAULT gen_random_uuid() | UUID so offline-created records have a globally unique ID |
+| rider_id | INTEGER | REFERENCES riders(id) NOT NULL | Which rider made this visit |
+| outlet_id | INTEGER | REFERENCES outlets(id) NOT NULL | Which outlet was visited |
+| outcome | TEXT | NOT NULL CHECK (outcome IN ('delivered','no_stock','no_stop')) | Visit outcome code |
+| arrived_at | TIMESTAMP | NULLABLE | When rider entered geofence |
+| departed_at | TIMESTAMP | NULLABLE | When rider exited geofence or closed the visit |
+| duration_minutes | INTEGER | NULLABLE | Calculated from arrived_at and departed_at |
+| units_refilled | INTEGER | DEFAULT 0 | Canisters refilled at ₱32 per unit |
+| units_sold_new | INTEGER | DEFAULT 0 | New canisters sold at ₱70 per unit |
+| payment_collected | DECIMAL(10,2) | NULLABLE | Combined payment for the visit |
+| gps_accuracy_meters | DECIMAL(6,2) | NULLABLE | GPS accuracy reading at geofence entry |
+| notes | TEXT | NULLABLE | Optional free-text note from rider |
+| order_id | UUID | NULLABLE | Reserved for v2 order intake. Always NULL in v1. |
+| created_at | TIMESTAMP | DEFAULT NOW() | When record was inserted — may differ from arrived_at for offline records |
+ 
+**Note: ***Add a check constraint: CONSTRAINT delivered_has_units CHECK (outcome != **'**delivered**'** OR (units_refilled + units_sold_new) **>** 0). This enforces REQ-017a at the database level.*
+ 
+### **6.1.7 routes**
+ 
+| **Column** | **Type** | **Constraints** | **Description** |
+| --- | --- | --- | --- |
+| id | SERIAL | PRIMARY KEY | Auto-incrementing route ID |
+| name | TEXT | NOT NULL | Short label e.g. San Juan North — Tuesday |
+| assigned_rider_id | INTEGER | REFERENCES riders(id) NOT NULL | The rider this route is assigned to |
+| created_by | INTEGER | REFERENCES managers(id) | Manager who created this route |
+| is_active | BOOLEAN | DEFAULT TRUE | Only one active route per rider at a time |
+| created_at | TIMESTAMP | DEFAULT NOW() | When route was created |
+ 
+### **6.1.8 route_outlets**
+ 
+Junction table linking routes to their outlets in a specific sequence. Supports the high priority flag per REQ-062.
+ 
+| **Column** | **Type** | **Constraints** | **Description** |
+| --- | --- | --- | --- |
+| id | SERIAL | PRIMARY KEY | Auto-incrementing |
+| route_id | INTEGER | REFERENCES routes(id) NOT NULL | Which route |
+| outlet_id | INTEGER | REFERENCES outlets(id) NOT NULL | Which outlet |
+| sequence_order | INTEGER | NOT NULL | Position in the suggested sequence — 1 is first |
+| is_high_priority | BOOLEAN | DEFAULT FALSE | TRUE triggers push notification to rider |
+ 
+## **6.2 Key queries to validate**
+ 
+After creating the schema and importing outlet data, verify these queries return correct results before proceeding to Phase 2. Run them in the Supabase SQL editor.
+ 
+| **Query** | **What it tests** | **SRS requirement** |
+| --- | --- | --- |
+| SELECT name, ST_Distance(location, ST_Point(121.02, 14.60)::GEOGRAPHY) AS dist_m FROM outlets WHERE ST_DWithin(location, ST_Point(121.02, 14.60)::GEOGRAPHY, 2000) AND outlet_status = 'active' AND location_pin_quality IN ('precise','area') AND location IS NOT NULL ORDER BY dist_m; | Nearby outlets query with coordinate quality filter — the most critical spatial query in the system | REQ-001, REQ-002, REQ-107 |
+| SELECT o.outlet_name, MAX(v.arrived_at) AS last_visit FROM outlets o LEFT JOIN visits v ON v.outlet_id = o.id WHERE o.outlet_status = 'active' GROUP BY o.id ORDER BY last_visit ASC NULLS FIRST; | Outlets sorted by last visit date — powers route suggestion | REQ-003 |
+| SELECT * FROM outlets WHERE outlet_status = 'active' AND id NOT IN (SELECT DISTINCT outlet_id FROM visits WHERE arrived_at > NOW() - INTERVAL '7 days'); | Outlets not visited in 7+ days — powers manager dashboard alert | REQ-052 |
+| SELECT location_pin_quality, location_verification_level, COUNT(*) FROM outlets GROUP BY location_pin_quality, location_verification_level ORDER BY location_pin_quality; | Data quality breakdown — manager work queue visibility | REQ-106 |
+ 
+## **6.3 Data import**
+ 
+The outlet spreadsheet has already been partially imported into Supabase during Phase 0 and Phase 1 preparation work. The following steps finalise the import for production use.
+ 
+- Verify all outlet records are present: SELECT COUNT(*) FROM outlets;
+ 
+- Set location_pin_quality per outlet based on coordinate confidence — use the five defined values: precise, area, cluster, mismatch, missing
+ 
+- Set location_verification_level per outlet based on who confirmed the data — use the four defined values: auditor, rider, staff, unverified
+ 
+- Set outlet_status per outlet — active for confirmed active outlets, pullout for outlets where product has been removed, inactive for all uncertain records
+ 
+- Add the spatial index after all coordinates are loaded: CREATE INDEX outlets_location_idx ON outlets USING GIST(location);
+ 
+- Spot-check 20 random outlets by exporting to GeoJSON and viewing on geojson.io to verify pin placement
+ 
+- Run the data quality breakdown query from Section 6.2 to confirm the distribution of quality levels
+ 
+## **6.4 Phase 1 acceptance criteria**
+ 
+- All eight tables created with correct columns, types, constraints, and check constraints
+ 
+- Spatial index exists on outlets.location
+ 
+- system_config seeded with geofence_radius_meters = 20 and gps_poll_interval_seconds = 10
+ 
+- Outlet records imported with status, pin quality, and verification level set per record
+ 
+- Nearby outlets query with quality filter returns correct results for a test coordinate in San Juan City
+ 
+- Nearby query correctly excludes outlets with pin quality of cluster, mismatch, or missing
+ 
+- Last-visited sort query returns outlets in correct order
+ 
+- Check constraint on visits table rejects a delivered outcome with zero units
+ 
+- Check constraint on outlets table rejects invalid outlet_status, location_pin_quality, or location_verification_level values
+ 
+- Data quality breakdown query returns counts across all five pin quality values
+ 
+# **7. Phase 2 — Backend API**
+ 
+Phase 2 builds the Node.js API server that connects all three components. Every piece of functionality in the web admin and the rider app is mediated by this API. It must be fully tested via Postman before any UI work begins.
+ 
+## **7.1 Project setup**
+ 
+- Initialise Node.js project in /backend: npm init -y
+ 
+- Install core dependencies: npm install express pg jsonwebtoken bcrypt dotenv cors
+ 
+- Install dev dependencies: npm install -D nodemon
+ 
+- Create index.js as the entry point. Configure Express with JSON body parsing and CORS.
+ 
+- Connect to PostgreSQL using the pg library and the DATABASE_URL from .env — this is the Supabase connection string. No Supabase-specific client library is needed.
+ 
+- Add a health check endpoint: GET /health returns { status: 'ok' }
+ 
+**Note: ***The Node.js pg library connects to Supabase exactly like any other PostgreSQL database. Use the connection string from Supabase Project Settings → Database → Connection string → URI. If Supabase requires SSL (it does by default), add ?sslmode=require to the end of the connection string or configure ssl: { rejectUnauthorized: false } in the pg client options.*
+ 
+## **7.2 API endpoints — complete list**
+ 
+All endpoints are prefixed with /api/v1. Authentication uses JWT tokens for managers and a custom token scheme for riders. Every endpoint except /auth must validate the token before responding.
+ 
+### **7.2.1 Authentication**
+ 
+| **Method** | **Endpoint** | **Who calls it** | **What it does** | **SRS** |
+| --- | --- | --- | --- | --- |
+| POST | /auth/manager/login | Web admin | Manager logs in with email and password. Returns JWT. | REQ-004 |
+| POST | /auth/rider/setup | Rider app | Rider enters one-time setup code. Returns permanent auth token. | REQ-004, REQ-005 |
+| POST | /auth/rider/verify | Rider app | Verifies rider token on reconnect. Returns account status. | REQ-036, REQ-043 |
+ 
+### **7.2.2 Outlets**
+ 
+| **Method** | **Endpoint** | **Who calls it** | **What it does** | **SRS** |
+| --- | --- | --- | --- | --- |
+| GET | /outlets/nearby?lat=&lng=&radius= | Rider app | Returns active outlets within radius meters of GPS coordinate where pin quality is precise or area. Uses ST_DWithin with quality filter per REQ-107. | REQ-001, REQ-002, REQ-107 |
+| GET | /outlets/:id/last-visit | Rider app | Returns last visit record for the outlet detail screen. Respects show_last_visitor and show_last_visit_time flags. | REQ-009, REQ-010, REQ-011 |
+| GET | /admin/outlets | Web admin | Returns all recorded outlets with status, quality fields, and last visit date. Supports filters by status, pin quality, verification level. | REQ-045, REQ-106 |
+| GET | /admin/outlets/unvisited | Web admin | Returns active outlets with no visit in 7+ days. | REQ-052 |
+| POST | /admin/outlets | Web admin | Manager adds a new outlet. | REQ-046 |
+| PATCH | /admin/outlets/:id | Web admin | Manager edits outlet details, status, pin quality, or verification level. | REQ-047, REQ-048 |
+| PATCH | /admin/outlets/:id/flags | Web admin | Manager toggles show_last_visitor and show_last_visit_time. | REQ-049, REQ-050 |
+ 
+### **7.2.3 Photos**
+ 
+| **Method** | **Endpoint** | **Who calls it** | **What it does** | **SRS** |
+| --- | --- | --- | --- | --- |
+| GET | /outlets/:id/photo | Rider app | Returns current approved photo URL. Lazy loaded per REQ-012. | REQ-009, REQ-012 |
+| POST | /outlets/:id/photo | Rider app | Rider submits a new photo. Uploads to Cloudinary. Status = pending. | REQ-026, REQ-027 |
+| POST | /admin/outlets/:id/photo | Web admin | Manager uploads a photo. Approved immediately. Becomes current. | REQ-053 |
+| GET | /admin/photos/pending | Web admin | Returns all pending rider-submitted photos with count. | REQ-054, REQ-055 |
+| PATCH | /admin/photos/:id/review | Web admin | Manager approves or rejects a pending photo. | REQ-056, REQ-058 |
+ 
+### **7.2.4 Visits**
+ 
+| **Method** | **Endpoint** | **Who calls it** | **What it does** | **SRS** |
+| --- | --- | --- | --- | --- |
+| POST | /visits | Rider app | Logs a visit. Accepts outcome, timestamps, units, payment, notes, order_id (nullable). Validates delivered constraint. | REQ-016, REQ-017, REQ-017a, REQ-019, REQ-020 |
+| GET | /admin/visits/today | Web admin | Returns all visits from the current day across all riders. | REQ-066 |
+| GET | /admin/outlets/:id/visits | Web admin | Returns full visit history for a specific outlet. | REQ-067 |
+| GET | /admin/riders/:id/visits | Web admin | Returns full visit history for a specific rider. | REQ-068 |
+ 
+### **7.2.5 Riders — manager view**
+ 
+| **Method** | **Endpoint** | **Who calls it** | **What it does** | **SRS** |
+| --- | --- | --- | --- | --- |
+| POST | /admin/riders | Web admin | Manager creates a new rider account. Generates one-time setup code. | REQ-038, REQ-039 |
+| GET | /admin/riders | Web admin | Returns all rider accounts with calculated stats. | REQ-041 |
+| GET | /admin/riders/:id | Web admin | Returns a single rider account with full stats. | REQ-041 |
+| PATCH | /admin/riders/:id/lock | Web admin | Locks rider account. Invalidates auth token immediately. | REQ-042, REQ-043 |
+| PATCH | /admin/riders/:id/fcm-token | Rider app | Rider app updates FCM token on launch. | REQ-063 |
+ 
+### **7.2.6 Routes**
+ 
+| **Method** | **Endpoint** | **Who calls it** | **What it does** | **SRS** |
+| --- | --- | --- | --- | --- |
+| POST | /admin/routes | Web admin | Manager creates a route and assigns to a rider. Max 80 outlets. | REQ-059, REQ-060, REQ-061 |
+| GET | /routes/my-route | Rider app | Returns the active route for the authenticated rider. Included in shift-start sync. | REQ-029, REQ-032 |
+| PATCH | /admin/routes/:id/outlets/:outletId/priority | Web admin | Manager flags an outlet as high priority. Triggers FCM push notification. | REQ-062, REQ-063, REQ-064 |
+ 
+### **7.2.7 Shift-start sync**
+ 
+| **Method** | **Endpoint** | **Who calls it** | **What it does** | **SRS** |
+| --- | --- | --- | --- | --- |
+| GET | /sync/shift-start | Rider app | Single endpoint returning encrypted payload: active outlets where pin quality is precise or area, assigned route, system config (geofence radius, poll interval), A-GPS almanac flag. Called once per shift over WiFi. | REQ-002, REQ-032, REQ-072, REQ-073, REQ-075, REQ-107 |
+ 
+## **7.3 Security implementation**
+ 
+- All endpoints served over HTTPS — Supabase enforces SSL on the database connection by default. The API host (Railway or Render) provides HTTPS at the platform level.
+ 
+- Manager authentication uses JWT tokens signed with JWT_SECRET from .env. Tokens expire after 24 hours.
+ 
+- Rider authentication uses a long random token stored as a bcrypt hash in riders.auth_token_hash. Invalidated by setting this column to NULL on account lock.
+ 
+- The shift-start sync payload is encrypted with AES-256 using a session key generated per shift. The session key is returned in the sync response and held in Flutter's in-memory state only — never written to device storage.
+ 
+- Passwords and tokens are never logged. Add middleware to strip sensitive fields from request logs.
+ 
+- The Supabase connection string in .env contains database credentials — never commit this file to GitHub.
+ 
+## **7.4 Phase 2 acceptance criteria**
+ 
+- GET /health returns 200 OK
+ 
+- POST /auth/rider/setup returns a token when given a valid setup code
+ 
+- POST /auth/rider/verify returns { status: 'locked' } for a locked account
+ 
+- GET /outlets/nearby returns only active outlets with precise or area pin quality, sorted by distance
+ 
+- GET /outlets/nearby excludes outlets with cluster, mismatch, or missing pin quality even if outlet_status is active
+ 
+- POST /visits with outcome = delivered and both unit fields = 0 returns 400 Bad Request
+ 
+- POST /visits with outcome = delivered and valid units returns 201 Created
+ 
+- PATCH /admin/riders/:id/lock sets auth_token_hash to NULL in the Supabase database
+ 
+- PATCH /admin/routes/:id/outlets/:outletId/priority sends an FCM push notification to the rider's device
+ 
+- GET /sync/shift-start returns a payload under 200KB for the active outlet set
+ 
+- GET /admin/outlets supports filter by location_pin_quality and location_verification_level
+ 
+- All endpoints return 401 Unauthorized when called without a valid token
+ 
+# **8. Phase 3 — Web Admin Panel**
+ 
+Phase 3 builds the browser-based management interface used exclusively by the branch manager. It connects to the API built in Phase 2. Build the web admin before the mobile app — it is faster to build, easier to debug, and gives you a tool for managing test data during Phase 4.
+ 
+## **8.1 Project setup**
+ 
+- Initialise React project in /web-admin: npx create-react-app zerothree-admin
+ 
+- Install dependencies: npm install leaflet react-leaflet axios react-router-dom
+ 
+- Configure API base URL in a .env file: REACT_APP_API_URL=https://your-api-url.railway.app
+ 
+- Set up React Router with three main routes: /login, /dashboard, /outlets
+ 
+## **8.2 Screens to build**
+ 
+| **Screen** | **Key elements** | **API endpoints used** |
+| --- | --- | --- |
+| Login | Email and password fields. JWT stored in localStorage on success. | POST /auth/manager/login |
+| Dashboard | Today's visit activity table — outlet name, rider, outcome, arrival, departure, duration. Badge counter for pending photos. Active outlets not visited in 7+ days list. | GET /admin/visits/today, GET /admin/photos/pending, GET /admin/outlets/unvisited |
+| Outlet map | Leaflet.js map with OpenStreetMap tiles. All recorded outlets as pins coloured by status (green = active, grey = inactive, orange = pullout). Faded pins for low pin quality. Click pin to open outlet panel. | GET /admin/outlets |
+| Outlet panel | Slides in on pin click. Shows outlet details, current photo, last visit, status selector, pin quality and verification level selectors, edit fields, flag controls, visit history. | GET /admin/outlets/:id, GET /admin/outlets/:id/visits, PATCH /admin/outlets/:id |
+| Data quality view | Filter panel allowing manager to view outlets by pin quality and verification level. Shows count per combination. Identifies geocoding work queue (missing, mismatch). | GET /admin/outlets with quality filters |
+| Rider accounts | List of all riders with account status, days active, total visits. Create new rider form. Lock button per rider. | GET /admin/riders, POST /admin/riders, PATCH /admin/riders/:id/lock |
+| Photo review queue | Grid of pending photos with current photo alongside each submission. Approve and reject buttons. Optional rejection reason field. | GET /admin/photos/pending, PATCH /admin/photos/:id/review |
+| Route builder | Outlet search and select. Drag-and-drop sequence ordering. High priority toggle per outlet. Rider assignment. Submit creates route and triggers FCM if any outlets are high priority. | POST /admin/routes, PATCH /admin/routes/:id/outlets/:outletId/priority |
+ 
+## **8.3 Map implementation notes**
+ 
+- Use Leaflet.js with OpenStreetMap tiles — free, no API key required, no billing risk
+ 
+- Outlet pins use L.circleMarker for performance with many points — L.marker with custom icons is slower
+ 
+- Pin colour: green = active, grey = inactive, orange = pullout
+ 
+- Faded or smaller pins for outlets with cluster, mismatch, or missing pin quality to visually distinguish uncertain records
+ 
+- High priority outlets within a route use a star or exclamation marker on top of the standard pin
+ 
+- Do not load all visit history on map load — fetch it lazily when the manager clicks a specific outlet
+ 
+## **8.4 Phase 3 acceptance criteria**
+ 
+- Manager can log in and is redirected to the dashboard
+ 
+- Dashboard shows today's visit activity within 5 seconds of loading
+ 
+- Pending photo badge counter shows correct count
+ 
+- All recorded outlets appear on the map with correct status colours
+ 
+- Manager can filter outlets by location_pin_quality and see the count per value
+ 
+- Manager can add a new outlet — it appears on the map immediately after save
+ 
+- Manager can change outlet status between active, inactive, and pullout
+ 
+- Manager can update pin quality and verification level per outlet
+ 
+- Manager can create a new rider account in under 2 minutes
+ 
+- Manager can lock a rider account — confirmed by checking Supabase table
+ 
+- Manager can approve a pending photo — it becomes the outlet's current photo
+ 
+- Manager can build and assign a route of 10 outlets in under 5 minutes
+ 
+- Manager can flag an outlet as high priority — FCM notification fires within 60 seconds
+ 
+# **9. Phase 4 — Rider Mobile App**
+ 
+Phase 4 is the most complex phase and carries the longest estimate. The rider app must handle offline operation, background GPS polling, encrypted local storage, and automatic sync — all on mid-range Android hardware. Build and test each feature in isolation before combining them.
+ 
+**Important: **Test on a real Android device, not just the emulator. GPS, background services, and battery optimisation behave differently on real hardware from different manufacturers. A Samsung Galaxy behaves differently from a realme or Xiaomi — test on at least two devices if possible.
+ 
+## **9.1 Flutter packages required**
+ 
+| **Package** | **Purpose** | **pub.dev name** |
+| --- | --- | --- |
+| Map display with offline MBTiles | Renders the outlet map from locally cached tiles | flutter_map |
+| GPS location | Polls device GPS at configurable interval | geolocator |
+| Encrypted storage | Stores session key and auth token securely | flutter_secure_storage |
+| Local SQLite database | Queues offline visit records before sync | sqflite |
+| Firebase push notifications | Receives FCM notifications for high priority outlets | firebase_messaging |
+| HTTP client | Communicates with the backend API | dio or http |
+| Connectivity detection | Monitors network status to trigger sync on reconnect | connectivity_plus |
+| Background services | Keeps GPS polling alive when app is backgrounded | flutter_background_service |
+ 
+## **9.2 Screens to build**
+ 
+| **Screen** | **Key elements** | **Notes** |
+| --- | --- | --- |
+| First launch — setup | Single text field for one-time setup code. Submits to POST /auth/rider/setup. Stores returned token in flutter_secure_storage. | Shown only once. After successful setup, never shown again. |
+| Data disclosure | Plain text disclosure statement. Single acknowledgement button. Cannot be dismissed without tapping. | Required by RA 10173. REQ-006. |
+| Map view | flutter_map with offline MBTiles tiles. Active outlet pins — only precise and area quality outlets included. Route sequence numbers on assigned outlets. High priority star marker. Rider's current GPS position shown. | Primary screen. Must load within 5 seconds from cached data. REQ-074. |
+| Outlet detail | Store photo (lazy loaded). Name and address. Last visit date and outcome. Conditionally: last visitor name and exact visit time based on flags. Navigate button opens Google Maps or Waze deep link. | Shown when rider taps a pin before check-in. REQ-008, REQ-009. |
+| Visit logging | Triggered automatically after 60 seconds in geofence. Outcome selector: delivered, no_stock, no_stop. For delivered: refill units field, new can units field, payment field. Optional notes field. Optional photo submission. | Max 3 taps from map to logged outcome. REQ-090. |
+| Locked screen | Full screen message indicating account is locked. No outlet data accessible. | Shown immediately on reconnect if account is locked. REQ-036. |
+ 
+## **9.3 Offline architecture**
+ 
+The offline system has three distinct layers that must be built in this order:
+ 
+- Layer 1 — Encrypted outlet cache. At shift-start sync, download the active outlet list (precise and area quality only) and assigned route. Encrypt the payload using AES-256 with the session key returned by the server. Store in flutter_secure_storage. Decrypt in memory on demand. Wipe at logout or shift end by deleting the stored key.
+ 
+- Layer 2 — Offline visit queue. When a visit is logged with no internet connection, write it to a local SQLite table (pending_visits) with all fields intact. Include the UUID visit ID generated on the device so it can be submitted to the server without collision.
+ 
+- Layer 3 — Sync on reconnect. The connectivity_plus package fires an event when network connectivity is restored. On this event: call POST /auth/rider/verify to check account status. If active, iterate over pending_visits and POST each to /visits. On success, delete from the local queue. On failure, leave in queue for next reconnect.
+ 
+**Important: **Visit records in the local queue must survive an app crash or phone restart. Use sqflite transactions to ensure records are either fully written or not written at all — never partially written. This satisfies REQ-093.
+ 
+## **9.4 GPS and geofence implementation**
+ 
+- Use the geolocator package to request location permission on first launch
+ 
+- Start a background service using flutter_background_service that polls GPS every 10 seconds (read from system_config at shift start)
+ 
+- On each GPS poll, check the current position against all active outlet locations loaded from the encrypted cache. Calculate distance using the Haversine formula — do not call the API for this.
+ 
+- When a rider enters a geofence (distance <= geofence_radius_meters from system_config): record arrived_at timestamp. Start a 60-second timer.
+ 
+- If the rider is still inside after 60 seconds: trigger the visit logging screen prompt.
+ 
+- If the rider exits before 60 seconds: automatically log a no_stop outcome with no rider input. Record arrived_at and departed_at.
+ 
+- Store gps_accuracy_meters from the geolocator position object with each visit record.
+ 
+- If GPS accuracy is worse than 50 meters at the moment of geofence entry: show the out-of-range warning per REQ-024 but allow the rider to proceed.
+ 
+## **9.5 Phase 4 acceptance criteria**
+ 
+- App opens and shows the map with active outlet pins within 5 seconds using cached data — only precise and area quality outlets visible
+ 
+- Map functions fully in airplane mode after shift-start sync
+ 
+- Tapping an outlet pin shows the detail screen with photo, last visit date, and outcome
+ 
+- Navigate button opens Google Maps or Waze with the outlet coordinates pre-filled
+ 
+- Walking or driving into a 20-meter geofence triggers the visit prompt after 60 seconds
+ 
+- Passing through a geofence in under 60 seconds logs a no_stop outcome automatically
+ 
+- Logging 5 visits while offline, then reconnecting, syncs all 5 to the server within 30 seconds
+ 
+- No visit record is lost after an app crash or phone restart
+ 
+- Locking a rider account from the web admin causes the locked screen to appear on the phone within 10 seconds when online
+ 
+- A high priority flag from the manager triggers a push notification on the rider's phone within 60 seconds
+ 
+- Total mobile data for a simulated full shift (sync + 20 visits + 10 photo views) is under 5MB
+ 
+# **10. Phase 5 — Integration and Deployment**
+ 
+Phase 5 connects all three components in a live environment and runs the acceptance scenarios defined in SRS Section 13. This phase is about testing the complete system as a whole, not building new features.
+ 
+## **10.1 Deployment checklist**
+ 
+| **#** | **Task** | **Done when** |
+| --- | --- | --- |
+| 5.1 | Backend API deployed to Railway or Render with production environment variables set. DATABASE_URL points to the Supabase connection string. | GET /health returns 200 from the live URL |
+| 5.2 | HTTPS confirmed active on the API domain | Browser shows padlock. HTTP requests redirect to HTTPS. |
+| 5.3 | Web admin deployed to Vercel or Netlify (both free tier). Configured to use production API URL. | Manager can log in from a browser on a different machine |
+| 5.4 | Flutter app built as a release APK: flutter build apk --release | APK installs and runs on a test Android device |
+| 5.5 | Verify all outlet records in Supabase have status, pin quality, and verification level correctly set. Confirm active outlets with precise or area quality are the ones that appear in the rider app. | SELECT COUNT(*) FROM outlets WHERE outlet_status='active' AND location_pin_quality IN ('precise','area') returns expected count |
+| 5.6 | At least one manager account created by system administrator | Manager can log into the web admin with real credentials |
+| 5.7 | MBTiles map tile package for the 7-area service zone generated and bundled with the Flutter app | Map displays offline in airplane mode showing correct streets |
+| 5.8 | At least 20 outlet photos uploaded by manager before first rider test | Outlet detail screens show real photos for 20+ outlets |
+ 
+## **10.2 Acceptance scenarios**
+ 
+The following scenarios are lifted directly from SRS Section 13. All six must be demonstrated successfully for v1 to be considered complete.
+ 
+| **Scenario** | **Description** | **Pass condition** |
+| --- | --- | --- |
+| A — New rider first day | Tester with no prior route knowledge completes first solo shift | All steps completed without asking for directions. Visit appears in dashboard within 30 seconds. |
+| B — Offline operation | Device in airplane mode after sync. Log 5 visits. Reconnect. | All 5 visits appear in dashboard within 30 seconds of reconnect. No record lost. |
+| C — Account lock | Manager locks account while rider app is open | Locked screen appears within 10 seconds if online. At next reconnect if offline. No outlet data accessible after lock. |
+| D — High priority route | Manager creates 10-outlet route. Flags 2 as high priority. | Push notification within 60 seconds. Distinct visual marker on map. Marker visible even with notifications disabled. |
+| E — Data usage | Full simulated shift: sync + 20 visits + 10 photo views | Total mobile data under 5MB measured on device |
+| F — Manager operations | Manager performs all core management tasks | Rider account created under 2 minutes. Route of 80 outlets assigned under 5 minutes. Unvisited outlets identified under 30 seconds. Quality filter shows missing coordinate work queue. |
+ 
+# **11. Timeline**
+ 
+The following schedule assumes a single developer working approximately 15 to 20 hours per week across one semester. Weeks are numbered from project start.
+ 
+| **Weeks** | **Phase** | **Primary focus** |
+| --- | --- | --- |
+| 1 – 2 | Phase 0 | Environment setup, Supabase project creation, accounts, tooling, Git, pre-build learning |
+| 2 – 4 | Phase 1 | SQL and PostGIS learning in Supabase SQL editor, schema design, data quality fields, outlet import and quality flagging, query validation |
+| 4 – 7 | Phase 2 | JavaScript and async learning, API endpoints, Postman testing, FCM integration, quality filter in nearby query |
+| 7 – 10 | Phase 3 | React and Leaflet learning, web admin screens, manager workflows, data quality filter view |
+| 10 – 15 | Phase 4 | Dart and Flutter learning, map view, GPS, geofence, offline, sync, photo submission |
+| 15 – 17 | Phase 5 | Deployment, integration testing, acceptance scenarios, bug fixes |
+| 17 – 18 | Buffer | Reserved for overruns, legal review of time tracking feature, documentation finalisation |
+ 
+**Note: ***Phase 4 is the longest phase and carries the highest risk of overrun. If the project is behind schedule entering Phase 4, reduce scope by deferring the photo submission feature (REQ-026 to REQ-028) to a post-v1 update — it is the least critical rider-facing feature.*
+ 
+# **12. Implementation Risk Register**
+ 
+The following risks are specific to the implementation phase. Business risks are documented in BRD v2.1 Section 17.
+ 
+| **Risk** | **Likelihood** | **Impact** | **Mitigation** |
+| --- | --- | --- | --- |
+| Background GPS service killed by Android battery optimisation on some phone manufacturers | High | High | Test on Samsung, realme, and Xiaomi devices. Add manufacturer-specific battery optimisation bypass instructions to the app setup guide. Use flutter_background_service which handles this better than raw isolates. |
+| Supabase free tier project pauses after 7 days of inactivity | Medium | Low | Active development will prevent pausing. Be aware the project takes ~20 seconds to wake up after inactivity. Upgrade to paid plan if this becomes a problem in production. |
+| Supabase SSL requirement causes Node.js pg connection errors | Medium | Medium | Add ?sslmode=require to the connection string or set ssl: { rejectUnauthorized: false } in pg client options. This is a one-line fix but easy to overlook on first connection. |
+| Outlet coordinate quality worse than expected — too few precise/area outlets to show riders | High | Medium | Even 50 active outlets with reliable coordinates provide immediate value. Expand the active set incrementally as field verification improves pin quality. |
+| Offline sync produces duplicate visit records when the same record is submitted twice | Medium | Medium | Use UUID primary keys generated on the device. The server must implement idempotency — a second POST with the same UUID returns 200 rather than creating a duplicate. |
+| MBTiles map tile package is too large | Medium | High | Generate tiles only for zoom levels 13 to 17 (street level). For the 7-area service zone this should be under 150MB. Download tiles over WiFi at first shift-start sync rather than bundling in APK. |
+| Phase 4 runs over schedule due to Flutter learning curve | High | Medium | If behind by Week 13, defer photo submission feature. Core features — map, geofence, visit logging, offline sync — must ship. |
+| Session key management causes encrypted cache to become unreadable mid-shift | Low | High | Store session key in Flutter's in-memory state only. If the app is killed and restarted mid-shift, prompt the rider to perform a new shift-start sync rather than attempting to recover the previous session. |
+ 
+# **13. Document Control**
+ 
+| **Version** | **Date** | **Author** | **Changes** |
+| --- | --- | --- | --- |
+| 1.0 | March 2026 | Vincent Salvador | Initial release. Derived from ZeroThree BRD v1.9 and SRS v1.2. |
+| 1.1 | March 2026 | Vincent Salvador | Three changes: (1) Supabase adopted as the database host for all phases including production — Phase 0 tasks 0.3 and 0.4 rewritten, Railway/Render removed as database option, Supabase SSL note added to Phase 2 setup, Supabase noted throughout; (2) pullout status added to outlets table schema replacing closed — check constraint updated; (3) location_pin_quality and location_verification_level columns added to outlets table schema with check constraints, quality filter added to nearby outlets query (REQ-107), data quality view added to Phase 3 web admin screens, quality filter added to Phase 5 deployment checklist and acceptance scenario F. Source documents updated to BRD v2.1 and SRS v1.3. |
+ 
+**Note: ***This document should be updated whenever a build decision significantly deviates from what is described here. All deviations should also be recorded in the Development Diary with a date and rationale.*
+ 
+Page  of           March 2026  |  BRD v2.1  |  SRS v1.3

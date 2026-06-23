@@ -13,3 +13,4 @@ npm-debug.log*
 # Operating System files
 Thumbs.db
 .DS_Store
+.md

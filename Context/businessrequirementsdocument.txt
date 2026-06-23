@@ -1,0 +1,501 @@
+ZeroThree BRD v2.1  |  CONFIDENTIAL          LPG Delivery Route Management System
+ 
+**PROJECT ZEROTHREE**
+ 
+LPG Delivery Route Management System
+ 
+**Business Requirements Document**
+ 
+Version 2.1  |  March 2026
+ 
+Author: Claude Sonnet 4.6  |  Vincent Salvador
+ 
+**CONFIDENTIAL — INTERNAL USE ONLY**
+ 
+# **1. Business Overview**
+ 
+Primary purpose — This system is first and foremost a field tool for riders. For new riders, it is a familiarization aid — replacing verbal directions and tribal knowledge with a reliable, visual map of every active outlet in the service area, so that a rider who has never worked this route before can operate independently from day one. For experienced riders, it is an optimization tool — surfacing which outlets have not been visited recently, showing the fastest path through their area, and removing the mental overhead of remembering 300 locations so they can focus on volume and speed. The single measure of whether this system succeeds is whether riders — new and experienced alike — perform better with it than without it.
+ 
+This project is for a business that operates an LPG distribution branch located in San Juan City, Metro Manila, delivering liquefied petroleum gas canisters to sari-sari stores and small retail outlets across San Juan City and its bordering areas — including parts of Quezon City, Manila (Tondo, Sta. Mesa, Pandacan, Sampaloc), and Mandaluyong.
+ 
+The branch has a total known network of approximately 550 recorded outlets, of which a significant portion are inactive, pulled out, or have uncertain status. Of the recorded outlets, approximately 50 to 100 are confirmed active and currently being serviced by 1 to 3 riders traveling daily from the San Juan branch — delivering full canisters and collecting empty ones for refilling. The system is designed to accommodate the full known network as data quality improves over time.
+ 
+The branch conducts two types of transactions with outlets. Refills account for approximately 70% of transactions — the outlet hands over empty canisters and the rider replaces them with full ones at ₱32 per unit, with the empties returned to the branch. New can sales account for approximately 30% — the rider sells a brand new canister to the outlet at ₱70 per unit. Both transaction types may occur within the same visit.
+ 
+# **2. The Problem**
+ 
+## **2.1 Institutional knowledge cannot be transferred to new riders**
+ 
+The branch has built relationships with outlets over years of operation. That knowledge — where each outlet is, what it looks like, how often it orders, who the owner is — currently exists only in the heads of experienced riders and branch staff. When a new rider joins, they receive none of it. There is no map, no outlet profile, no visit history they can consult. They learn by following other riders, by getting lost, and by making mistakes over weeks or months. Given the high turnover rate, this cycle repeats constantly and the business pays for it in lost productivity every time a new rider starts. The primary purpose of this system is to break that cycle — to make institutional knowledge transferable, persistent, and immediately available to any rider from their first day.
+ 
+## **2.2 Knowledge is lost every time a rider leaves**
+ 
+The business has a high rider turnover rate. When an experienced rider leaves, the operational knowledge they carry — which outlets are active, which have relocated, which are difficult to find, which have payment issues — leaves with them entirely. Not everything they know is written down and if it is written down, the writing usually gets forgotten. Each new rider effectively starts nearly from zero.
+ 
+## **2.3 Outlet data quality is poor and inconsistently recorded**
+ 
+The existing outlet records are incomplete and of variable quality. Approximately one fifth of recorded outlets have inaccurate or missing coordinates. A significant portion of recorded outlets have had their LPG product pulled out and are no longer serviceable. Another portion have uncertain status — they may or may not still be active. There is currently no consistent system for recording how confident the branch is in any given outlet record, making it impossible to know which data can be trusted and which needs verification.
+ 
+## **2.4 Managers have no real-time visibility**
+ 
+The branch manager currently has no way to know which outlets have been visited on any given day, which riders are ahead or behind schedule, or which outlets have silently dropped off the active list. All reporting is verbal and after the fact, making it impossible to act on problems while they are still happening.
+ 
+## **2.5 No permanent delivery records per outlet**
+ 
+There is no system linking a specific visit or delivery to a specific outlet on a specific date. This makes it impossible to track which outlets are growing or declining, identify accounts not visited in weeks, or resolve disputes about whether a delivery occurred.
+ 
+## **2.6 No visibility into how riders spend their time**
+ 
+Without any time or activity tracking, the manager has no way to know whether a rider is moving efficiently between outlets, spending excessive time at certain locations, consistently skipping specific outlets, or simply not completing their route. This makes coaching, planning, and dispute resolution impossible.
+ 
+# **3. Business Goals**
+ 
+## **Primary goals — rider effectiveness**
+ 
+| **#** | **Goal** | **How we measure success** |
+| --- | --- | --- |
+| P1 | New riders can operate independently from day one | A rider with no prior knowledge of the route completes their first solo shift without asking anyone for directions |
+| P2 | Riders build a mental map of the service area over time | After 2 weeks, a rider can identify outlet clusters and plan their own efficient daily sequence |
+| P3 | Experienced riders can identify and prioritize unvisited outlets quickly | A rider opens the app and immediately sees which nearby outlets have gone the longest without a visit |
+ 
+## **Supporting goals — operational visibility and control**
+ 
+| **#** | **Goal** | **How we measure success** |
+| --- | --- | --- |
+| S1 | Every outlet interaction is permanently recorded | 100% of visits have a timestamped record linked to a specific outlet and rider |
+| S2 | Managers can see delivery activity in real time | Manager can answer "which outlets were visited today?" in under 30 seconds |
+| S3 | Time spent at each outlet is recorded | Manager can see arrival, departure, and duration for any visit |
+| S4 | Company outlet data never permanently resides on a rider's device | Outlet data encrypted during shift only, wiped at shift end |
+| S5 | Manager can revoke rider access immediately | Locked account is inaccessible the moment phone reconnects |
+| S6 | Manager can create and assign suggested routes of up to 80 outlets to a specific rider | A manager can build and assign a complete route in under 5 minutes from the web admin |
+| S7 | High priority outlets within a route are immediately communicated to the rider | Rider receives a push notification and sees a distinct visual marker on the map pin within 60 seconds of the manager flagging the outlet |
+| S8 | Manager can assess and track outlet data quality | Manager can view outlets filtered by location pin quality and verification level, and identify which records need field verification |
+ 
+## **Background principles — future growth**
+ 
+These principles do not drive v1 features but shape v1 design decisions so that future growth is not blocked by technical debt.
+ 
+| **#** | **Principle** | **How it shapes v1** |
+| --- | --- | --- |
+| G1 | Increase refills per rider over time | Visit logging captures outcome and frequency data that will power v2 analytics |
+| G2 | Incrementally reactivate dormant outlets as rider capacity grows | All recorded outlets preserved in the database with full status history, ready for reactivation |
+| G3 | Support more riders as the business scales | Architecture and data model designed for up to 10 riders without structural changes |
+| G4 | Routes are the primary mechanism for incrementally growing refill volume | Route data and deviation patterns collected in v1 become the training data for v2 route optimization |
+| G5 | Inbound order intake will replace the current verbal relay system in v2 | The visits table includes a nullable order_id field from v1. The outlet database and FCM push infrastructure built in v1 are the exact components an order system needs. No structural changes required to add order intake in v2. |
+ 
+# **4. Service Area**
+ 
+The system must cover the following areas, all reachable from the San Juan City branch:
+ 
+| **Area** | **Notes** |
+| --- | --- |
+| San Juan City | Primary service area, branch is located here |
+| Mandaluyong | Directly borders San Juan |
+| Quezon City | Northern and eastern border of San Juan |
+| Tondo, Manila | Western reach, across the Pasig River corridor |
+| Sta. Mesa, Manila | South of San Juan along the river |
+| Pandacan, Manila | Southern border area |
+| Sampaloc, Manila | Southwest coverage area |
+ 
+All outlet GPS coordinates must fall within this geographic boundary. The rider app map defaults to showing the full service area on load, displaying only active outlets with reliable coordinate data.
+ 
+# **5. Users**
+ 
+## **5.1 Riders**
+ 
+- 1 to 3 active riders operating from the San Juan branch
+ 
+- Accounts created exclusively by the manager — riders cannot self-register
+ 
+- Log in once on first use — authentication token stored permanently on the phone so no repeated login is required
+ 
+- Travel by motorcycle across all 7 covered areas daily
+ 
+- Park directly in front of outlets for a window transaction
+ 
+- Use personal Android smartphones — cannot assume high-end hardware
+ 
+- Variable mobile signal, particularly in dense urban barangays
+ 
+- High turnover — system must be fully learnable in under one hour with no prior training
+ 
+- Not expected to be technically skilled
+ 
+- Only ever see active outlets with reliable coordinates — inactive, pulled out, and low-confidence outlets are completely hidden from their view
+ 
+- Must acknowledge a data collection disclosure on first login before the app is usable
+ 
+- Outlet data is available on the phone only during an active shift and in encrypted form — never stored permanently on the device
+ 
+- Primary need: know where to go next and record what happened at each outlet
+ 
+## **5.2 Branch Manager**
+ 
+- Office-based in San Juan City, uses a desktop browser
+ 
+- Creates and manages all rider accounts including the ability to lock any account immediately
+ 
+- Has full visibility of all recorded outlets regardless of status or data quality
+ 
+- Sole authority to activate, deactivate, or mark any outlet as pulled out
+ 
+- Monitors daily visit activity across all riders including time spent per outlet and visit outcomes
+ 
+- Creates ad hoc suggested routes of up to 80 outlets assigned to specific riders
+ 
+- Flags individual outlets within a route as high priority
+ 
+- Reviews and approves or rejects rider-submitted outlet photos
+ 
+- Configures per-outlet visibility of rider name and visit time shown to riders
+ 
+- Reviews and manages outlet data quality — can view outlets filtered by pin quality and verification level
+ 
+- Primary need: visibility, control, and data security across the entire outlet network
+ 
+## **5.3 System Administrator (developer)**
+ 
+- Manages the server, database, and deployments
+ 
+- Imports all recorded outlet records from the existing spreadsheet
+ 
+- Sets initial status, pin quality, and verification level per outlet during import
+ 
+- Creates the initial manager account — all subsequent accounts are created by the manager
+ 
+# **6. Rider Account Model**
+ 
+Rider accounts are created and managed exclusively by the branch manager through the web admin. Riders cannot create, modify, or delete their own accounts.
+ 
+## **6.1 Rider account fields**
+ 
+| **Field** | **Description** | **Editable by** |
+| --- | --- | --- |
+| Full name | Rider's legal name | Manager |
+| Phone number | Primary contact number | Manager |
+| Photo or ID | Profile photo or ID document image | Manager |
+| Emergency contact | Name and number of emergency contact | Manager |
+| Assigned areas | Barangays or zones the rider covers | Manager |
+| Date hired | Date the rider joined the branch | Manager |
+| Account status | Active or locked | Manager |
+| FCM token | Firebase device token for push notifications — updated automatically by the app | System |
+| Days active | Count of days the rider has logged at least one visit — calculated automatically | System |
+| Total visits lifetime | Running count of all visits logged — calculated automatically | System |
+| Date created | When the account was created | System |
+| Last active | Timestamp of the rider's last sync with the server | System |
+ 
+## **6.2 Account creation flow**
+ 
+The manager creates a rider account from the web admin entering all required fields. The system generates a one-time setup code. The rider enters this code on their phone on first launch which triggers the single login event. After that the authentication token is stored on the phone permanently and the rider never logs in again under normal circumstances.
+ 
+## **6.3 Account locking**
+ 
+When the manager locks a rider account from the web admin, the server immediately invalidates the rider's authentication token. The lock takes effect on the rider's phone the moment it next contacts the server. If the phone is online, this is effectively immediate — the app detects the invalid token within seconds and displays a locked screen. If the phone is offline at the moment of locking, the lock takes effect the moment connectivity is restored. This behavior must be clearly communicated to managers — a locked account is not guaranteed to be inaccessible in the field if the rider has no signal. Upon lock, all shift data cached on the phone is wiped.
+ 
+# **7. Outlet Status Model**
+ 
+| **Status** | **Meaning** | **Visible to riders** | **Visible to manager** | **Who can change it** |
+| --- | --- | --- | --- | --- |
+| active | Currently being serviced by riders | Yes — shown as a pin on the map | Yes | Manager only |
+| inactive | Known outlet, not currently being serviced | No — completely hidden | Yes | Manager only |
+| pullout | LPG product has been removed from this outlet — no longer serviceable | No — completely hidden | Yes | Manager only |
+ 
+Riders have no ability to change outlet status. If a rider encounters a problem at an outlet — it has moved, shut down, or is refusing deliveries — they report it verbally to the manager, who then updates the status in the web admin. The term pullout is used operationally to describe outlets where the LPG product has been physically removed, distinguishing them from outlets that are merely temporarily inactive.
+ 
+# **7a. Outlet Data Quality Model**
+ 
+Because the branch's existing outlet records are of variable quality, two additional fields are recorded per outlet to help the manager understand how much confidence to place in any given record. These fields are set during import and updated as field verification occurs.
+ 
+## **7a.1 Location pin quality**
+ 
+Records the reliability of the stored GPS coordinates for this outlet.
+ 
+| **Value** | **Meaning** |
+| --- | --- |
+| precise | Coordinate is exactly at the outlet or the nearest identifiable storefront |
+| area | Coordinate places the outlet in the general area but the exact position among nearby stores is uncertain |
+| cluster | Multiple outlets are known to be nearby but this specific outlet cannot be individually placed on the map |
+| mismatch | The recorded address and the map pin are too far apart to be reliable — coordinate cannot be trusted and requires correction |
+| missing | No address and no map pin are available for this outlet |
+ 
+## **7a.2 Location verification level**
+ 
+Records who can confirm the accuracy of this outlet's location and current status.
+ 
+| **Value** | **Meaning** |
+| --- | --- |
+| auditor | A designated auditor rider has physically confirmed the outlet location and current status |
+| rider | A current or former delivery rider can confirm the outlet location and current status |
+| staff | Branch staff or the system administrator can confirm the outlet location and current status |
+| unverified | No one can currently confirm the outlet location or status — treat with caution |
+ 
+## **7a.3 Combined confidence guide**
+ 
+The two fields work together to indicate how much operational confidence to place in any outlet record. The manager uses this to decide whether an outlet is ready to be shown to riders or needs further verification first.
+ 
+| **Pin quality** | **Verification level** | **Operational meaning** |
+| --- | --- | --- |
+| precise | auditor | Highest confidence — safe to mark active and show to riders |
+| precise | rider or staff | High confidence — safe to mark active |
+| area | rider or staff | Moderate confidence — show to riders but flag for future precision improvement |
+| cluster | any | Low confidence — keep inactive until a precise coordinate can be obtained |
+| mismatch | any | Contradictory data — do not show to riders until coordinate is corrected |
+| missing | any | No usable location data — keep inactive |
+ 
+# **8. Outlet Detail Screen**
+ 
+When a rider taps an outlet pin on the map, a detail screen is shown before check-in, containing the following:
+ 
+| **Element** | **Always shown** | **Conditionally shown** |
+| --- | --- | --- |
+| Outlet photo | Yes — placeholder if none exists | — |
+| Outlet name and address | Yes | — |
+| Last visit date | Yes | — |
+| Last visit outcome | Yes | — |
+| Name of last rider who visited | — | Only if manager has enabled show_last_visitor for this outlet |
+| Exact time of last visit | — | Only if manager has enabled show_last_visit_time for this outlet |
+ 
+The two visibility flags are configured independently per outlet by the manager. They default to hidden. Only the single most recent visit is shown — full history is available only in the web admin.
+ 
+# **9. Outlet Photo Management**
+ 
+Each outlet has one current approved photo visible to riders on the detail screen. Photos are stored externally in Cloudinary and referenced by URL in the database — they are never stored as binary data in PostgreSQL.
+ 
+**Manager upload. **The manager may upload a photo for any outlet from the web admin. Manager-uploaded photos are approved immediately with no review step.
+ 
+**Rider submission. **After completing any visit, a rider may optionally submit a new photo. The submission is held in a pending state on the server. The existing approved photo continues showing to all riders. The rider receives no in-app feedback — the submission is silent from their perspective.
+ 
+**Manager review. **A badge counter on the web admin dashboard shows the number of pending photo submissions. The manager opens the queue, reviews the submitted photo alongside the current photo, and approves or rejects. All submissions are retained for audit regardless of outcome.
+ 
+**Photo storage and compression. **Photos are stored in Cloudinary (free tier for v1) and automatically compressed to approximately 200KB on upload. Photos are never stored permanently on rider devices.
+ 
+**Lazy loading. **Photos are fetched only when a rider opens a specific outlet detail screen. They are never included in the shift-start sync payload.
+ 
+# **10. Visit Outcome Model**
+ 
+| **Outcome** | **What happened** | **Delivery logged** | **Time recorded** |
+| --- | --- | --- | --- |
+| delivered | Rider arrived, conducted one or both transaction types — refills at ₱32 per unit and/or new can sales at ₱70 per unit — and collected payment | Yes | Full arrival and departure |
+| no_stock | Rider arrived, owner has no empty canisters to refill | No | Full arrival and departure |
+| no_stop | Rider passed through the geofence for under 60 seconds — logged automatically with no rider input | No | Full arrival and departure |
+ 
+Riders may add an optional short text note to any visit outcome. A single delivered visit may involve refill transactions, new can sales, or both. These are tracked as separate unit counts — canisters refilled and new canisters sold — with a single combined payment figure. At least one unit type must be greater than zero for a delivered outcome to be valid. The no_stop outcome is detected automatically when a rider passes through the geofence radius for fewer than 60 seconds.
+ 
+# **11. Geofence and Time Tracking**
+ 
+## **11.1 Geofence radius**
+ 
+The system uses a configurable 20-meter geofence radius per outlet for check-in verification, chosen to account for typical consumer Android GPS drift of 15 to 25 meters in dense urban environments. If the rider is outside this radius at check-in, a warning is displayed but they may still proceed. GPS accuracy at check-in is stored with every visit record for audit purposes.
+ 
+The geofence radius is stored as a configurable system parameter in the database defaulting to 20 meters, subject to review and adjustment during field testing in Metro Manila without requiring any app redeployment. When the rider enters the geofence radius, a 60-second timer starts. If the rider remains inside for more than 60 seconds, the app prompts them to log a visit outcome. If the rider exits in under 60 seconds, a no_stop outcome is recorded automatically.
+ 
+To preserve battery life, GPS position is polled at 10-second intervals rather than streamed continuously. The poll interval is a configurable system parameter. GPS polling consumes no mobile data — the GPS chip receives satellite signals passively without requiring an internet connection. A-GPS almanac data of approximately 10KB is downloaded once per day during the shift-start WiFi sync.
+ 
+## **11.2 Time recording**
+ 
+- Arrival time recorded when rider enters the geofence radius
+ 
+- Departure time recorded when rider exits the geofence radius
+ 
+- Duration in minutes calculated automatically from arrival and departure timestamps
+ 
+- All times recorded in Philippine Standard Time (PST, UTC+8)
+ 
+# **12. Route Model**
+ 
+The manager may create a suggested route and assign it to a specific rider at any time through the web admin. Routes are ad hoc — there is no fixed schedule or automatic generation. A route contains up to 80 active outlets presented to the rider in a suggested sequence. The sequence is a recommendation only — riders may deviate at their discretion based on conditions on the ground.
+ 
+**Note: ***A rider carries approximately 4 × 33 canisters per load. With each outlet taking 5 to 10 or more canisters, a rider exhausts their supply after a small number of stops and must return to the branch to reload. The actual daily visit sequence is dictated by load cycles and reload availability, not a fixed plan. Route deviation is a physical necessity, not just a preference.*
+ 
+Within any route, the manager may flag individual outlets as high priority. High priority outlets are communicated to the rider via push notification through Firebase Cloud Messaging and a distinct visual marker on the outlet's map pin. Routes are included in the shift-start sync payload and subject to the same encrypted temporary storage and automatic wipe at shift end.
+ 
+# **13. Data Privacy Considerations**
+ 
+Visit activity and rider location data fall under the Philippine Data Privacy Act (Republic Act 10173).
+ 
+**Informed consent at onboarding. **A disclosure screen on first login states that visit activity — including arrival time, departure time, duration, and visit outcome — is recorded and visible to the branch manager. The rider must acknowledge this before proceeding.
+ 
+**Defined purpose. **Data is collected solely for route planning, delivery verification, and operational efficiency review.
+ 
+**Data minimization and device security. **The system uses a 20-meter geofence and samples GPS only at geofence entry and exit — not continuously. Outlet data is encrypted on the device during the shift using a session key issued by the server. The session key is revoked at logout or account lock, rendering any remaining cached data unreadable. All outlet data is wiped from the device at shift end or logout.
+ 
+**Access control. **Visit data is visible only to the branch manager and system administrator. It is not shared externally.
+ 
+**Legal note: ***A qualified Philippine lawyer should review the time-tracking and device data features before deployment to real employees to confirm compliance with RA 10173. The time-tracking feature is designed to be disableable without requiring a rebuild or redeployment of the core application.*
+ 
+# **14. Scope**
+ 
+## **14.1 In scope for version 1**
+ 
+- Rider account creation by manager only — riders cannot self-register
+ 
+- One-time rider login via setup code — authentication token persisted on device permanently
+ 
+- Rider account fields: full name, phone number, photo or ID, emergency contact, assigned areas, date hired
+ 
+- Calculated rider statistics: days active, total lifetime visits, last active timestamp
+ 
+- Account locking by manager — effective immediately when phone is online, at next reconnect when offline
+ 
+- Rider mobile app showing only active outlets with reliable coordinates as pins on a map
+ 
+- GPS-based display of active outlets near the rider's current position
+ 
+- Outlet detail screen showing photo, last visit date, last visit outcome, and conditionally rider name and visit time
+ 
+- Per-outlet manager configuration of show_last_visitor and show_last_visit_time flags
+ 
+- Offline map tiles covering the full 7-area service zone, downloaded once over WiFi at the branch
+ 
+- Shift-start sync — encrypted outlet data, assigned route, and map tiles downloaded to device at shift start, wiped at shift end or logout
+ 
+- Visit logging with three outcome codes: delivered, no_stock, no_stop
+ 
+- Delivery details for delivered outcomes — units refilled at ₱32 per unit, new canisters sold at ₱70 per unit, and combined payment collected
+ 
+- Validation that at least one unit type is greater than zero for any delivered outcome
+ 
+- Optional free text notes on every visit
+ 
+- Automatic geofence detection — 60-second threshold determines delivered/no_stock prompt versus automatic no_stop
+ 
+- Arrival time, departure time, and duration recorded per visit
+ 
+- GPS accuracy reading stored with every visit for audit purposes
+ 
+- First-login disclosure screen — requires acknowledgment before app use
+ 
+- Offline visit logging with automatic sync on reconnect
+ 
+- Account status check on every server reconnect — locked accounts enforced immediately on reconnect
+ 
+- Ad hoc route creation by manager — up to 80 active outlets, assigned to a specific rider, suggested sequence
+ 
+- High priority outlet flagging within a route — communicated via push notification and distinct map pin marker
+ 
+- Firebase Cloud Messaging integration for push notifications
+ 
+- Web admin panel for manager to manage all recorded outlets and all rider accounts
+ 
+- Web dashboard showing today's visit activity per rider including outcomes and time spent
+ 
+- Pending photo submissions badge counter on web admin dashboard
+ 
+- Basic route suggestion — active outlets sorted by time since last visit
+ 
+- Manager view of active outlets not visited in 7 or more days
+ 
+- Outlet data quality fields: location_pin_quality and location_verification_level stored per outlet
+ 
+- Manager dashboard filter for outlets by pin quality and verification level
+ 
+- One-time import of all recorded outlet records from existing spreadsheet
+ 
+## **14.2 Out of scope for version 1**
+ 
+- Rider self-registration or account modification
+ 
+- Continuous GPS tracking between outlets
+ 
+- Automated performance scoring or penalties
+ 
+- Riders changing outlet status
+ 
+- Automated outlet reactivation based on any trigger
+ 
+- Turn-by-turn navigation (handled by Google Maps or Waze via deep link)
+ 
+- Automatic route optimization (deferred to v2)
+ 
+- iOS version
+ 
+- Customer-facing features
+ 
+- Payment processing or invoicing
+ 
+- Integration with accounting or inventory systems
+ 
+- Analytics on route deviation patterns (deferred to v2)
+ 
+- Inbound order intake system (deferred to v2 — infrastructure laid in v1 via nullable order_id field)
+ 
+# **15. Constraints**
+ 
+| **Constraint** | **Detail** |
+| --- | --- |
+| Mobile data usage | Under 5MB per rider per day. Map tiles downloaded once over WiFi. Only active outlet data and assigned route in shift-start sync. Photos lazy-loaded only on outlet tap. GPS polling consumes no mobile data. A-GPS almanac data of approximately 10KB downloaded once per day during shift-start WiFi sync. |
+| Device type | Android only for v1. Cannot assume high-end hardware. |
+| Connectivity | Offline-first for core functions. Account lock and route updates take effect at next reconnect if offline. |
+| Rider count | 1 to 3 riders. System need not scale beyond 10 for v1. |
+| Outlet data on device | Encrypted during shift only. Session key server-issued and revoked at logout or lock. Wiped at shift end. |
+| Geofence radius | Configurable, defaulting to 20 meters. Subject to adjustment during field testing without app redeployment. |
+| Rider-visible outlets | Only outlets with outlet_status = active AND location_pin_quality IN (precise, area) are shown to riders. Low-confidence coordinates are kept hidden until verified. |
+| Photo file size | Compressed to approximately 200KB via Cloudinary. Full-resolution photos never transmitted to devices. |
+| Push notifications | Require active internet connection. FCM holds and delivers when connectivity restored if rider is offline. |
+| Route update timing | Routes created or modified after shift-start sync reach the rider at next reconnect only. |
+| Data privacy | RA 10173 compliance required. Rider consent mandatory before deployment. Legal review of time-tracking feature recommended before deploying to real employees. |
+| Budget | Free tiers only for v1. Railway or Render for API hosting, Cloudinary for photos, FCM for push notifications, Supabase for database hosting during development. |
+| Developer capacity | Single developer over one semester — approximately 16 to 18 weeks across 5 build phases. |
+ 
+# **16. Assumptions**
+ 
+- The branch spreadsheet contains records for most known outlets including current status, outlet name, and address or barangay
+ 
+- GPS coordinates will be geocoded from addresses and manually verified before go-live — approximately one fifth of records currently have inaccurate or missing coordinates
+ 
+- Riders have Android phones with GPS, a functional rear camera, and the ability to receive push notifications
+ 
+- Branch WiFi is available for shift-start sync and map tile download
+ 
+- The manager has a computer with a modern web browser
+ 
+- Outlet density is highest in San Juan City and Mandaluyong
+ 
+- Spreadsheet contains at minimum: outlet name, address or barangay, active or inactive status
+ 
+- Riders will acknowledge the data collection disclosure before the app is used in a real deployment
+ 
+- Manager will upload initial photos for a representative sample of outlets before the first rider shift
+ 
+- The manager understands that route updates and account locks take effect at the rider's next server reconnect when the rider is offline
+ 
+- Data quality will improve incrementally as riders verify outlet locations in the field
+ 
+# **17. Risks**
+ 
+| **Risk** | **Likelihood** | **Impact** | **Mitigation** |
+| --- | --- | --- | --- |
+| Spreadsheet data incomplete or inconsistent across recorded outlets | High | Medium | Audit before import. Use location_pin_quality and location_verification_level to categorise confidence per record. Only high-confidence records shown to riders. |
+| GPS drift causes missed geofence detection at 20-meter radius in dense streets | Medium | Low | Warning shown but rider can proceed. Accuracy logged for audit. Radius is configurable and will be tuned during field testing. |
+| Significant portion of outlets have pullout status, reducing usable active network | High | Medium | System is designed for incremental growth. Even 50 to 100 active outlets provide immediate value to new riders. Inactive and pullout records preserved for future reactivation. |
+| Rider offline when account is locked | Medium | Medium | Document clearly — lock takes effect at next reconnect. Shift data wiped on lock. |
+| Route update does not reach rider in time due to offline status | Medium | Low | Manager advised of timing limitation. Urgent changes communicated by phone as backup. |
+| Push notification delayed or not delivered due to poor signal | Medium | Low | Visual marker on map pin is the primary indicator — notification is supplementary. |
+| Manager does not action pending photo queue promptly | Medium | Low | Badge counter always visible. Old photo continues showing — no operational impact. |
+| **Riders resist adopting app** | **High** | **High** | Minimal rider UI — map, tap, check in, log outcome, done. |
+| Signal too weak for sync in some barangays | Medium | Medium | Offline-first design. Sync on reconnect. |
+| Single absence among 1 to 3 riders disrupts all deliveries | High | High | Outside app scope. Manager dashboard surfaces unvisited outlets to help plan coverage. |
+| Outlet data stale if manager does not maintain it | Medium | High | Dashboard flags active outlets with no visit in 7 or more days. |
+| Time tracking found non-compliant on legal review | Low | High | Feature designed to be disableable without rebuilding core app. |
+ 
+# **18. Success Definition**
+ 
+**For new riders: **A rider who has never worked this route before opens the app on their first day, completes the one-time setup using the manager-provided code, acknowledges the data collection disclosure, sees only active outlets with reliable coordinates as pins on a map, taps an outlet to see its photo and last visit information, navigates there using their existing map app, checks in within the geofence radius, logs a delivery, and that visit appears in the manager's web dashboard — all without asking anyone for directions.
+ 
+**For experienced riders: **A rider who already knows the area opens the app at shift start, immediately sees which nearby outlets have gone the longest without a visit, follows or deviates from their assigned route at their discretion, and completes more outlet visits per day than they did before the app existed.
+ 
+**For the manager: **The branch manager opens the web admin, creates a new rider account in under two minutes, assigns a route in under five minutes, can see all visit activity across all riders in real time, can lock any rider account with effect at the next reconnect, can identify any active outlet not visited in over 7 days, and can filter all outlets by data quality level to build a verification work queue — all from a single browser window.
+ 
+**For the system: **Daily operation uses under 5MB of mobile data per rider. Outlet data never permanently resides on any rider device. The app functions fully offline for visit logging and enforces all security constraints the moment connectivity is restored.
+ 
+# **19. Document Control**
+ 
+| **Version** | **Date** | **Author** | **Changes** |
+| --- | --- | --- | --- |
+| 1.0 – 1.9 | March 2026 | Claude Sonnet 4.6 / Vincent Salvador | Iterative development through conversation. See development diary for session-by-session changes. |
+| 2.0 | March 2026 | Claude Sonnet 4.6 / Vincent Salvador | Clean consolidated version. Corrected inconsistencies: visit outcomes standardised to three codes; geofence radius standardised to 20 meters throughout; scope list updated. |
+| 2.1 | March 2026 | Claude Sonnet 4.6 / Vincent Salvador | Three changes from field data review: (1) closed status renamed to pullout throughout — reflects operational terminology for outlets where LPG product has been physically removed; (2) Section 7a added — Outlet Data Quality Model covering location_pin_quality (precise, area, cluster, mismatch, missing) and location_verification_level (auditor, rider, staff, unverified) with combined confidence guide; (3) outlet count updated to reflect actual recorded data — approximately 550 records with 50 to 100 confirmed active. Problem 2.3 added covering outlet data quality. Supporting goal S8 added. Constraint added for rider-visible outlet filter. Risk updated for geocoding quality. |
+ 
+**Note: ***This document should be reviewed and updated whenever a decision changes a testable behaviour of the system. The authoritative SRS derived from this BRD is ZeroThree SRS v1.3.*
+ 
+Page  of           March 2026  |  ZeroThree BRD v2.1
