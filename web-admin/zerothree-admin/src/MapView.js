@@ -108,12 +108,12 @@ export default function MapView() {
   const location = useLocation()
   const navigate = useNavigate()
   const highlightedId = location.state?.outletId ?? null
-
+  
   // ── Pin style ────────────────────────────────────────
   const getPinStyle = (outlet) => {
     const base = STATUS_COLOR[outlet.outlet_status] ?? '#9ca3af'
     const lowQ = LOW_QUALITY.has(outlet.location_pin_quality)
-    const isHighlighted = highlightedId && String(outlet.id) === String(highlightedId)
+    const isHighlighted = (highlightedId && String(outlet.id) === String(highlightedId)) || (selected && String(outlet.id) === String(selected.id))
 
     if (isHighlighted) {
       // Selected outlet: gold fill with black outline
@@ -543,25 +543,9 @@ export default function MapView() {
                         <td style={s.td}>{outlet.id}</td>
                         <td style={{ ...s.td, fontWeight: 500, cursor: 'pointer' }}
                             onClick={() => {
-                              setModalOutlet(outlet);
-                              setModalOutletForm({
-                                outlet_name: outlet.outlet_name ?? '',
-                                outlet_formaladdress: outlet.outlet_formaladdress ?? '',
-                                outlet_status: outlet.outlet_status ?? 'ACTIVE',
-                                location_pin_quality: outlet.location_pin_quality ?? 'missing',
-                                location_verification_level: outlet.location_verification_level ?? 'unverified',
-                                owner_name: outlet.owner_name ?? '',
-                                owner_contact: outlet.owner_contact ?? '',
-                                outlet_barangay: outlet.outlet_barangay ?? '',
-                                outlet_district: outlet.outlet_district ?? '',
-                                outlet_city: outlet.outlet_city ?? '',
-                                outlet_area: outlet.outlet_area ?? '',
-                                outlet_concerningbranch: outlet.outlet_concerningbranch ?? '',
-                                lat: outlet.latitude ?? '',
-                                lng: outlet.longitude ?? '',
-                              });
-                              setOutletModalMode('view');
-                              setShowOutletModal(true);
+                              setActiveTab('map');
+                              setSelected(outlet);
+                              fetchPhoto(outlet.id);
                             }}>
                             {outlet.outlet_name}
                           </td>
