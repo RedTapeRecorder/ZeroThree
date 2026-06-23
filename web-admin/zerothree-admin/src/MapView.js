@@ -33,19 +33,7 @@ const EMPTY_FILTERS = {
   status: '', pin_quality: '', verification_level: '', city: '', area: '',
 }
 
-// ── Pin style ────────────────────────────────
-function pinStyle(outlet) {
-  const base = STATUS_COLOR[outlet.outlet_status] ?? '#9ca3af'
-  const lowQ = LOW_QUALITY.has(outlet.location_pin_quality)
-  return {
-    color:       base,
-    fillColor:   base,
-    fillOpacity: lowQ ? 0.25 : 0.85,
-    opacity:     lowQ ? 0.4  : 1,
-    weight:      1.5,
-    radius:      lowQ ? 5    : 7,
-  }
-}
+// ── Pin style ────────────────────────────────────────
 
 // ── Helpers ──────────────────────────────────
 function Badge({ status }) {
@@ -117,18 +105,67 @@ export default function MapView() {
   const [uploadOutlet, setUploadOutlet] = useState(null)
   const location = useLocation()
   const navigate = useNavigate()
+  const highlightedId = location.state?.outletId ?? null
+
+  // ── Pin style ────────────────────────────────────────
+  const getPinStyle = (outlet) => {
+    const base = STATUS_COLOR[outlet.outlet_status] ?? '#9ca3af'
+    const lowQ = LOW_QUALITY.has(outlet.location_pin_quality)
+    const isHighlighted = highlightedId && String(outlet.id) === String(highlightedId)
+
+    if (isHighlighted) {
+      // Selected outlet: gold fill with black outline
+      return {
+        color: '#000000',        // black outline (stroke)
+        fillColor: '#FFD700',    // gold fill
+        fillOpacity: 1,
+        opacity: 1,              // stroke opacity
+        weight: 2,               // stroke width
+        radius: lowQ ? 8 : 11,   // radius (approximately 50% larger than normal)
+        stroke: true,
+        fill: true
+      }
+    }
+
+    // Non-selected outlet: use status-based styling
+    return {
+      color:       base,         // stroke color
+      fillColor:   base,         // fill color
+      fillOpacity: lowQ ? 0.25 : 0.85,
+      opacity:     lowQ ? 0.4  : 1,   // stroke opacity
+      weight:      1.5,
+      radius:      lowQ ? 5 : 7
+    }
+}
+
   // ── Effects ──────────────────────────────
-  useEffect(() => { fetchOutlets() }, [filters])
+  useEffect(() => {
+    fetchOutlets()
+  }, [filters])
 
   // Handle incoming outlet ID from dashboard navigation
   useEffect(() => {
-    if (location.state?.outletId && outlets.length > 0) {
-      const outlet = outlets.find(o => o.id === location.state.outletId)
-      if (outlet) {
-        handlePinClick(outlet)
+    if (location.state?.outletId) {
+      // Fetch the specific outlet directly to ensure we can find it regardless of filters
+      const fetchSpecificOutlet = async () => {
+        try {
+          const res = await axios.get(`${API_URL}/api/v1/admin/outlets/${location.state.outletId}`, { headers })
+          const outlet = res.data
+          if (outlet) {
+            handlePinClick(outlet)
+          }
+        } catch (err) {
+          // Fallback to filtering approach if direct fetch fails
+          const outlet = outlets.find(o => String(o.id) === String(location.state.outletId))
+          if (outlet) {
+            handlePinClick(outlet)
+          }
+        }
       }
+
+      fetchSpecificOutlet()
     }
-  }, [location.state?.outletId, outlets])
+  }, [location, outlets])
 
   // ── Derived ──────────────────────────────
   const plottable = outlets.filter(o => o.latitude != null && o.longitude != null)
@@ -147,16 +184,18 @@ export default function MapView() {
   const hasFilters = Object.values(filters).some(v => v !== '')
 
   // ── Fetch ────────────────────────────────
-  async function fetchOutlets() {
+  async function fetchOutlets(skipFilters = false) {
     setLoading(true)
     setError('')
     try {
       const params = {}
-      if (filters.status)             params.status             = filters.status
-      if (filters.pin_quality)        params.pin_quality        = filters.pin_quality
-      if (filters.verification_level) params.verification_level = filters.verification_level
-      if (filters.city)               params.city               = filters.city
-      if (filters.area)               params.area               = filters.area
+      if (!skipFilters) {
+        if (filters.status)             params.status             = filters.status
+        if (filters.pin_quality)        params.pin_quality        = filters.pin_quality
+        if (filters.verification_level) params.verification_level = filters.verification_level
+        if (filters.city)               params.city               = filters.city
+        if (filters.area)               params.area               = filters.area
+      }
 
       const res = await axios.get(`${API_URL}/api/v1/admin/outlets`, { headers, params })
       const data = res.data
@@ -381,7 +420,7 @@ export default function MapView() {
                 <CircleMarker
                   key={outlet.id}
                   center={[outlet.latitude, outlet.longitude]}
-                  {...pinStyle(outlet)}
+                  {...getPinStyle(outlet)}
                   eventHandlers={{ click: () => handlePinClick(outlet) }}
                 />
               ))}
