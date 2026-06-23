@@ -113,7 +113,10 @@ export default function MapView() {
   const getPinStyle = (outlet) => {
     const base = STATUS_COLOR[outlet.outlet_status] ?? '#9ca3af'
     const lowQ = LOW_QUALITY.has(outlet.location_pin_quality)
-    const isHighlighted = (highlightedId && String(outlet.id) === String(highlightedId)) || (selected && String(outlet.id) === String(selected.id))
+    const isHighlighted =
+      activeTab === 'map' &&
+      ((highlightedId && String(outlet.id) === String(highlightedId)) ||
+        (selected && String(outlet.id) === String(selected.id)))
 
     if (isHighlighted) {
       // Selected outlet: gold fill with black outline
@@ -186,6 +189,13 @@ export default function MapView() {
       fetchSpecificOutlet()
     }
   }, [location, outlets, navigate, token, setActiveTab])
+
+  // Clear selection when leaving map tab
+  useEffect(() => {
+    if (activeTab !== 'map') {
+      setSelected(null);
+    }
+  }, [activeTab])
 
   // ── Derived ──────────────────────────────
   const plottable = outlets.filter(o => o.latitude != null && o.longitude != null)
