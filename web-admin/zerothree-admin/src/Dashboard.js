@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import Sidebar from './Sidebar'
 
@@ -52,6 +53,7 @@ export default function Dashboard() {
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState('')
   const [today, setToday]           = useState('')
+  const navigate = useNavigate()
 
   const token = localStorage.getItem('zt_token')
   const headers = { Authorization: `Bearer ${token}` }
@@ -154,7 +156,25 @@ export default function Dashboard() {
                     {visits.map(visit => (
                       <tr key={visit.id} style={s.tr}>
                         <td style={s.td}>
-                          <p style={s.outletName}>{visit.outlet?.name ?? '—'}</p>
+                          {visit.outlet ? (
+                            <button
+                              onClick={() => navigate(`/outlets`, { state: { outletId: visit.outlet.id } })}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#111827',
+                                textAlign: 'left',
+                                padding: '0',
+                                font: 'inherit',
+                                cursor: 'pointer',
+                                textDecoration: 'underline'
+                              }}
+                            >
+                              <p style={{ margin: 0, fontSize: '13px', fontWeight: '500' }}>{visit.outlet.name}</p>
+                            </button>
+                          ) : (
+                            <p style={s.outletName}>—</p>
+                          )}
                           <p style={s.outletMeta}>{visit.outlet?.barangay ?? ''}</p>
                         </td>
                         <td style={s.td}>{visit.rider?.name ?? '—'}</td>
@@ -218,7 +238,21 @@ export default function Dashboard() {
                   {unvisited.map(outlet => (
                     <div key={outlet.id} style={s.unvisitedRow}>
                       <div style={s.unvisitedInfo}>
-                        <p style={s.outletName}>{outlet.outlet_name}</p>
+                        <button
+                          onClick={() => navigate(`/outlets`, { state: { outletId: outlet.id } })}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#111827',
+                            textAlign: 'left',
+                            padding: '0',
+                            font: 'inherit',
+                            cursor: 'pointer',
+                            textDecoration: 'underline'
+                          }}
+                        >
+                          <p style={{ margin: 0, fontSize: '13px', fontWeight: '500' }}>{outlet.outlet_name}</p>
+                        </button>
                         <p style={s.outletMeta}>
                           {outlet.outlet_barangay ?? outlet.outlet_formaladdress ?? '—'}
                         </p>

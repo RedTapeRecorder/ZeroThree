@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, CircleMarker } from 'react-leaflet'
 import axios from 'axios'
 import Sidebar from './Sidebar'
 import PhotoUploadModal from './PhotoUploadModal'
+import { useLocation, useNavigate } from 'react-router-dom'
 import 'leaflet/dist/leaflet.css'
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000'
@@ -114,8 +115,20 @@ export default function MapView() {
   
   //Picture
   const [uploadOutlet, setUploadOutlet] = useState(null)
+  const location = useLocation()
+  const navigate = useNavigate()
   // ── Effects ──────────────────────────────
   useEffect(() => { fetchOutlets() }, [filters])
+
+  // Handle incoming outlet ID from dashboard navigation
+  useEffect(() => {
+    if (location.state?.outletId && outlets.length > 0) {
+      const outlet = outlets.find(o => o.id === location.state.outletId)
+      if (outlet) {
+        handlePinClick(outlet)
+      }
+    }
+  }, [location.state?.outletId, outlets])
 
   // ── Derived ──────────────────────────────
   const plottable = outlets.filter(o => o.latitude != null && o.longitude != null)
