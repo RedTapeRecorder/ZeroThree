@@ -90,11 +90,13 @@ export default function MapView() {
   const [photoLoading, setPhotoLoading] = useState(false)
 
   // Table
-  const [search, setSearch]             = useState('')
-  const [editRow, setEditRow]           = useState(null)
-  const [editForm, setEditForm]         = useState({})
-  const [showCreate, setShowCreate]     = useState(false)
-  const [createForm, setCreateForm]     = useState(EMPTY_FORM)
+  const [search, setSearch]             = useState('');
+  const [showCreate, setShowCreate]     = useState(false);
+  const [createForm, setCreateForm]     = useState(EMPTY_FORM);
+  const [showOutletModal, setShowOutletModal] = useState(false);
+  const [outletModalMode, setOutletModalMode] = useState('view'); // 'view' or 'edit'
+  const [modalOutlet, setModalOutlet]   = useState(null)
+  const [modalOutletForm, setModalOutletForm] = useState({})
   const [saving, setSaving]             = useState(false)
   const [saveError, setSaveError]       = useState('')
 
@@ -146,6 +148,18 @@ export default function MapView() {
   // Handle incoming outlet ID from dashboard navigation
   useEffect(() => {
     if (location.state?.outletId) {
+      // Check token
+      if (!token) {
+        navigate('/login', { replace: true })
+        return
+      }
+
+      // Clear any previous error
+      setError('')
+
+      // Switch to map tab when navigating to view an outlet
+      setActiveTab('map');
+
       // Fetch the specific outlet directly to ensure we can find it regardless of filters
       const fetchSpecificOutlet = async () => {
         try {
@@ -155,17 +169,23 @@ export default function MapView() {
             handlePinClick(outlet)
           }
         } catch (err) {
-          // Fallback to filtering approach if direct fetch fails
-          const outlet = outlets.find(o => String(o.id) === String(location.state.outletId))
-          if (outlet) {
-            handlePinClick(outlet)
+          // Check if it's a 401 error
+          if (err.response && err.response.status === 401) {
+            navigate('/login', { replace: true })
+          } else {
+            setError('Failed to load outlet details.')
+            // Fallback to filtering approach if direct fetch fails
+            const outlet = outlets.find(o => String(o.id) === String(location.state.outletId))
+            if (outlet) {
+              handlePinClick(outlet)
+            }
           }
         }
       }
 
       fetchSpecificOutlet()
     }
-  }, [location, outlets])
+  }, [location, outlets, navigate, token, setActiveTab])
 
   // ── Derived ──────────────────────────────
   const plottable = outlets.filter(o => o.latitude != null && o.longitude != null)
@@ -180,6 +200,8 @@ export default function MapView() {
       o.owner_name?.toLowerCase().includes(q)
     )
   })
+  // Sort outlets by ID ascending for table view
+  const sortedFiltered = [...filtered].sort((a, b) => (a.id ?? 0) - (b.id ?? 0))
 
   const hasFilters = Object.values(filters).some(v => v !== '')
 
@@ -236,40 +258,6 @@ export default function MapView() {
   }
 
   // ── Table handlers ───────────────────────
-  function startEdit(outlet) {
-    setEditRow(outlet.id)
-    setEditForm({
-      outlet_name:                 outlet.outlet_name ?? '',
-      outlet_formaladdress:        outlet.outlet_formaladdress ?? '',
-      outlet_status:               outlet.outlet_status ?? 'ACTIVE',
-      location_pin_quality:        outlet.location_pin_quality ?? 'missing',
-      location_verification_level: outlet.location_verification_level ?? 'unverified',
-      owner_name:                  outlet.owner_name ?? '',
-      owner_contact:               outlet.owner_contact ?? '',
-      outlet_barangay:             outlet.outlet_barangay ?? '',
-      outlet_district:             outlet.outlet_district ?? '',
-      outlet_city:                 outlet.outlet_city ?? '',
-      outlet_area:                 outlet.outlet_area ?? '',
-      lat: outlet.latitude  ?? '',
-      lng: outlet.longitude ?? '',
-    })
-    setSaveError('')
-  }
-
-  async function saveEdit(id) {
-    setSaving(true)
-    setSaveError('')
-    try {
-      await axios.patch(`${API_URL}/api/v1/admin/outlets/${id}`, editForm, { headers })
-      setEditRow(null)
-      fetchOutlets()
-    } catch {
-      setSaveError('Save failed. Check your inputs.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   async function submitCreate() {
     setSaving(true)
     setSaveError('')
@@ -280,6 +268,26 @@ export default function MapView() {
       fetchOutlets()
     } catch {
       setSaveError('Could not create outlet. Check required fields.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Modal outlet handlers
+  async function saveModalOutlet() {
+    setSaving(true)
+    setSaveError('')
+    try {
+      if (outletModalMode === 'edit' && modalOutlet) {
+        await axios.patch(`${API_URL}/api/v1/admin/outlets/${modalOutlet.id}`, modalOutletForm, { headers })
+      } else {
+        // For new outlets (though we're not using this for create)
+        await axios.post(`${API_URL}/api/v1/admin/outlets`, modalOutletForm, { headers })
+      }
+      setShowOutletModal(false)
+      fetchOutlets()
+    } catch {
+      setSaveError('Save failed. Check your inputs.')
     } finally {
       setSaving(false)
     }
@@ -502,7 +510,7 @@ export default function MapView() {
             <div style={s.tableHeader}>
               <div>
                 <h1 style={s.pageTitle}>Outlet Table View</h1>
-                <p style={s.pageSubtitle}>{filtered.length} of {outlets.length} outlets</p>
+                <p style={s.pageSubtitle}>{sortedFiltered.length} of {outlets.length} outlets</p>
               </div>
               <div style={s.toolbar}>
                 <input
@@ -528,61 +536,35 @@ export default function MapView() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(outlet => (
+                  {sortedFiltered.map(outlet => (
                     <tr key={outlet.id} style={s.tr}>
-                      {editRow === outlet.id ? (
-                        // Edit row
-                        <>
-                          <td style={s.td}>{outlet.id}</td>
-                          <td style={s.td}><input style={s.cellInput} value={editForm.outlet_name} onChange={e => setEditForm(f => ({ ...f, outlet_name: e.target.value }))} /></td>
-                          <td style={s.td}><input style={s.cellInput} value={editForm.outlet_formaladdress} onChange={e => setEditForm(f => ({ ...f, outlet_formaladdress: e.target.value }))} /></td>
-                          <td style={s.td}><input style={s.cellInput} value={editForm.outlet_barangay} onChange={e => setEditForm(f => ({ ...f, outlet_barangay: e.target.value }))} /></td>
-                          <td style={s.td}><input style={s.cellInput} value={editForm.outlet_city} onChange={e => setEditForm(f => ({ ...f, outlet_city: e.target.value }))} /></td>
-                          <td style={s.td}><input style={s.cellInput} value={editForm.outlet_area} onChange={e => setEditForm(f => ({ ...f, outlet_area: e.target.value }))} /></td>
-                          <td style={s.td}>
-                            <select style={s.cellSelect} value={editForm.outlet_status} onChange={e => setEditForm(f => ({ ...f, outlet_status: e.target.value }))}>
-                              <option value="ACTIVE">ACTIVE</option>
-                              <option value="INACTIVE">INACTIVE</option>
-                              <option value="PULLOUT">PULLOUT</option>
-                            </select>
+                      {/* Read row with clickable outlet name */}
+                      <>
+                        <td style={s.td}>{outlet.id}</td>
+                        <td style={{ ...s.td, fontWeight: 500, cursor: 'pointer' }}
+                            onClick={() => {
+                              setModalOutlet(outlet);
+                              setModalOutletForm({
+                                outlet_name: outlet.outlet_name ?? '',
+                                outlet_formaladdress: outlet.outlet_formaladdress ?? '',
+                                outlet_status: outlet.outlet_status ?? 'ACTIVE',
+                                location_pin_quality: outlet.location_pin_quality ?? 'missing',
+                                location_verification_level: outlet.location_verification_level ?? 'unverified',
+                                owner_name: outlet.owner_name ?? '',
+                                owner_contact: outlet.owner_contact ?? '',
+                                outlet_barangay: outlet.outlet_barangay ?? '',
+                                outlet_district: outlet.outlet_district ?? '',
+                                outlet_city: outlet.outlet_city ?? '',
+                                outlet_area: outlet.outlet_area ?? '',
+                                outlet_concerningbranch: outlet.outlet_concerningbranch ?? '',
+                                lat: outlet.latitude ?? '',
+                                lng: outlet.longitude ?? '',
+                              });
+                              setOutletModalMode('view');
+                              setShowOutletModal(true);
+                            }}>
+                            {outlet.outlet_name}
                           </td>
-                          <td style={s.td}>
-                            <select style={s.cellSelect} value={editForm.location_pin_quality} onChange={e => setEditForm(f => ({ ...f, location_pin_quality: e.target.value }))}>
-                              <option value="precise">precise</option>
-                              <option value="area">area</option>
-                              <option value="cluster">cluster</option>
-                              <option value="mismatch">mismatch</option>
-                              <option value="missing">missing</option>
-                            </select>
-                          </td>
-                          <td style={s.td}>
-                            <select style={s.cellSelect} value={editForm.location_verification_level} onChange={e => setEditForm(f => ({ ...f, location_verification_level: e.target.value }))}>
-                              <option value="auditor">auditor</option>
-                              <option value="rider">rider</option>
-                              <option value="staff">staff</option>
-                              <option value="unverified">unverified</option>
-                            </select>
-                          </td>
-                          <td style={s.td}><input style={s.cellInput} value={editForm.owner_name} onChange={e => setEditForm(f => ({ ...f, owner_name: e.target.value }))} /></td>
-                          <td style={s.td}>
-                            <div style={{ display: 'flex', gap: '6px' }}>
-                              <button style={s.saveBtn} disabled={saving} onClick={() => saveEdit(outlet.id)}>{saving ? '…' : 'Save'}</button>
-                              <button style={s.cancelBtn} onClick={() => setEditRow(null)}>Cancel</button>
-                            </div>
-                            <button
-                              style={{ padding: '4px 10px', fontSize: '11px', fontWeight: '600', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '5px', cursor: 'pointer', color: '#c2410c', marginTop: '4px' }}
-                              onClick={() => setUploadOutlet(outlet)}
-                            >
-                              📷 Upload photo
-                            </button>
-                            {saveError && <p style={s.inlineError}>{saveError}</p>}
-                          </td>
-                        </>
-                      ) : (
-                        // Read row
-                        <>
-                          <td style={s.td}>{outlet.id}</td>
-                          <td style={{ ...s.td, fontWeight: 500 }}>{outlet.outlet_name}</td>
                           <td style={s.td}>{outlet.outlet_formaladdress ?? '—'}</td>
                           <td style={s.td}>{outlet.outlet_barangay ?? '—'}</td>
                           <td style={s.td}>{outlet.outlet_city ?? '—'}</td>
@@ -592,15 +574,43 @@ export default function MapView() {
                           <td style={s.td}>{outlet.location_verification_level ?? '—'}</td>
                           <td style={s.td}>{outlet.owner_name ?? '—'}</td>
                           <td style={s.td}>
-                            <button style={s.editBtn} onClick={() => startEdit(outlet)}>Edit</button>
+                            <div style={{ display: 'flex', gap: '6px', flexDirection: 'row' }}>
+                              <button style={s.editBtn}
+                                      onClick={() => {
+                                        setModalOutlet(outlet);
+                                        setModalOutletForm({
+                                          outlet_name: outlet.outlet_name ?? '',
+                                          outlet_formaladdress: outlet.outlet_formaladdress ?? '',
+                                          outlet_status: outlet.outlet_status ?? 'ACTIVE',
+                                          location_pin_quality: outlet.location_pin_quality ?? 'missing',
+                                          location_verification_level: outlet.location_verification_level ?? 'unverified',
+                                          owner_name: outlet.owner_name ?? '',
+                                          owner_contact: outlet.owner_contact ?? '',
+                                          outlet_barangay: outlet.outlet_barangay ?? '',
+                                          outlet_district: outlet.outlet_district ?? '',
+                                          outlet_city: outlet.outlet_city ?? '',
+                                          outlet_area: outlet.outlet_area ?? '',
+                                          outlet_concerningbranch: outlet.outlet_concerningbranch ?? '',
+                                          lat: outlet.latitude ?? '',
+                                          lng: outlet.longitude ?? '',
+                                        });
+                                        setOutletModalMode('edit');
+                                        setShowOutletModal(true);
+                                      }}>
+                                      Edit
+                                    </button>
+                              <button style={s.editBtn}
+                                      onClick={() => setUploadOutlet(outlet)}>
+                                Upload photo
+                              </button>
+                            </div>
                           </td>
                         </>
-                      )}
-                    </tr>
+                      </tr>
                   ))}
                 </tbody>
               </table>
-              {filtered.length === 0 && !loading && (
+              {sortedFiltered.length === 0 && !loading && (
                 <div style={s.emptyState}>No outlets match your search or filters.</div>
               )}
             </div>
@@ -723,6 +733,128 @@ export default function MapView() {
             setUploadOutlet(null)
           }}
         />
+      )}
+
+      {/* Outlet Modal (View/Edit) */}
+      {showOutletModal && (
+        <div style={s.modalOverlay}>
+          <div style={s.modal}>
+            <div style={s.modalHeader}>
+              <h2 style={s.modalTitle}>{outletModalMode === 'view' ? 'Outlet Details' : 'Edit Outlet'}</h2>
+              <button style={s.closeBtn} onClick={() => setShowOutletModal(false)}>✕</button>
+            </div>
+            <div style={s.modalBody}>
+              <div style={s.formGrid}>
+                <Field label="Outlet name *">
+                  <input style={s.input} value={modalOutletForm.outlet_name}
+                    onChange={e => setModalOutletForm(f => ({ ...f, outlet_name: e.target.value }))}
+                    disabled={outletModalMode === 'view'} />
+                </Field>
+                <Field label="Owner name *">
+                  <input style={s.input} value={modalOutletForm.owner_name}
+                    onChange={e => setModalOutletForm(f => ({ ...f, owner_name: e.target.value }))}
+                    disabled={outletModalMode === 'view'} />
+                </Field>
+                <Field label="Formal address *">
+                  <input style={s.input} value={modalOutletForm.outlet_formaladdress}
+                    onChange={e => setModalOutletForm(f => ({ ...f, outlet_formaladdress: e.target.value }))}
+                    disabled={outletModalMode === 'view'} />
+                </Field>
+                <Field label="Owner contact">
+                  <input style={s.input} value={modalOutletForm.owner_contact}
+                    onChange={e => setModalOutletForm(f => ({ ...f, owner_contact: e.target.value }))}
+                    disabled={outletModalMode === 'view'} />
+                </Field>
+                <Field label="Barangay">
+                  <input style={s.input} value={modalOutletForm.outlet_barangay}
+                    onChange={e => setModalOutletForm(f => ({ ...f, outlet_barangay: e.target.value }))}
+                    disabled={outletModalMode === 'view'} />
+                </Field>
+                <Field label="District">
+                  <input style={s.input} value={modalOutletForm.outlet_district}
+                    onChange={e => setModalOutletForm(f => ({ ...f, outlet_district: e.target.value }))}
+                    disabled={outletModalMode === 'view'} />
+                </Field>
+                <Field label="City">
+                  <select style={s.input} value={modalOutletForm.outlet_city}
+                    onChange={e => setModalOutletForm(f => ({ ...f, outlet_city: e.target.value }))}
+                    disabled={outletModalMode === 'view'}>
+                    <option value="">Select city</option>
+                    <option value="San Juan City">San Juan City</option>
+                    <option value="Mandaluyong">Mandaluyong</option>
+                    <option value="Quezon City">Quezon City</option>
+                    <option value="Manila">Manila</option>
+                  </select>
+                </Field>
+                <Field label="Area">
+                  <input style={s.input} value={modalOutletForm.outlet_area}
+                    onChange={e => setModalOutletForm(f => ({ ...f, outlet_area: e.target.value }))}
+                    disabled={outletModalMode === 'view'} />
+                </Field>
+                <Field label="Latitude *">
+                  <input style={s.input} type="number" step="any" value={modalOutletForm.lat}
+                    onChange={e => setModalOutletForm(f => ({ ...f, lat: e.target.value }))}
+                    disabled={outletModalMode === 'view'} />
+                </Field>
+                <Field label="Longitude *">
+                  <input style={s.input} type="number" step="any" value={modalOutletForm.lng}
+                    onChange={e => setModalOutletForm(f => ({ ...f, lng: e.target.value }))}
+                    disabled={outletModalMode === 'view'} />
+                </Field>
+                <Field label="Status *">
+                  <select style={s.input} value={modalOutletForm.outlet_status}
+                    onChange={e => setModalOutletForm(f => ({ ...f, outlet_status: e.target.value }))}
+                    disabled={outletModalMode === 'view'}>
+                    <option value="ACTIVE">ACTIVE</option>
+                    <option value="INACTIVE">INACTIVE</option>
+                    <option value="PULLOUT">PULLOUT</option>
+                  </select>
+                </Field>
+                <Field label="Pin quality *">
+                  <select style={s.input} value={modalOutletForm.location_pin_quality}
+                    onChange={e => setModalOutletForm(f => ({ ...f, location_pin_quality: e.target.value }))}
+                    disabled={outletModalMode === 'view'} >
+                    <option value="precise">precise</option>
+                    <option value="area">area</option>
+                    <option value="cluster">cluster</option>
+                    <option value="mismatch">mismatch</option>
+                    <option value="missing">missing</option>
+                  </select>
+                </Field>
+                <Field label="Verification level *">
+                  <select style={s.input} value={modalOutletForm.location_verification_level}
+                    onChange={e => setModalOutletForm(f => ({ ...f, location_verification_level: e.target.value }))}
+                    disabled={outletModalMode === 'view'}>
+                    <option value="auditor">auditor</option>
+                    <option value="rider">rider</option>
+                    <option value="staff">staff</option>
+                    <option value="unverified">unverified</option>
+                  </select>
+                </Field>
+                <Field label="Concerning branch">
+                  <input style={s.input} value={modalOutletForm.outlet_concerningbranch}
+                    onChange={e => setModalOutletForm(f => ({ ...f, outlet_concerningbranch: e.target.value }))}
+                    disabled={outletModalMode === 'view'} />
+                </Field>
+              </div>
+              {saveError && <p style={s.inlineError}>{saveError}</p>}
+            </div>
+            <div style={s.modalFooter}>
+              <button style={s.cancelBtn} onClick={() => setShowOutletModal(false)}>Cancel</button>
+              {outletModalMode === 'view' && (
+                <button style={{ padding: '4px 12px', fontSize: '12px', fontWeight: '600', background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: '5px', cursor: 'pointer', color: '#374151', marginRight: '8px' }}
+                  onClick={() => {
+                    setOutletModalMode('edit');
+                  }}>
+                  Edit
+                </button>
+              )}
+              <button style={s.saveBtn} disabled={saving} onClick={saveModalOutlet}>
+                {saving ? 'Saving…' : outletModalMode === 'view' ? 'Close' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
