@@ -68,12 +68,12 @@ sync.get('/sync/shift-start', requireRider, async (req, res) => {
     const routeResult = await pool.query(
       `SELECT
          r.id          AS route_id,
-         r.name        AS route_name,
+         r.route_name  AS route_name,
          ro.outlet_id,
          ro.sequence_order,
          ro.is_high_priority
        FROM routes r
-       JOIN route_outlets ro ON ro.route_id = r.id
+       JOIN routes_outlets ro ON ro.route_id = r.id
        WHERE r.assigned_rider_id = $1
          AND r.is_active = TRUE
        ORDER BY ro.sequence_order`,

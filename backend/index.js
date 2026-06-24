@@ -25,6 +25,9 @@ app.use('/api/v1', photosRouter);
 const routesRouter = require('./routes/routes');
 app.use('/api/v1', routesRouter);
 
+const syncRouter = require('./routes/sync');
+app.use('/api/v1', syncRouter);
+
 app.get('/api/v1/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date() })
 })
